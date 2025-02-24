@@ -32,28 +32,21 @@ fn listen(allocator: std.mem.Allocator) !void {
     while (true) {
         const con = try server.accept();
 
-        var handler = ClientHanler.init(con, allocator);
-        clients.append(handler) catch |e| {
-            std.log.err("Can't append new client: {}", .{e});
-        };
-        defer disconnect(handler);
-        try handler.handle();
-        //
-        // pool.spawnWg(&wgroup, struct {
-        //     fn run(
-        //         connection: std.net.Server.Connection,
-        //         a: std.mem.Allocator,
-        //     ) void {
-        //         var handler = ClientHanler.init(connection, a);
-        //         clients.append(handler) catch |e| {
-        //             std.log.err("Can't append new client: {}", .{e});
-        //         };
-        //         defer disconnect(handler);
-        //         handler.handle() catch |e| {
-        //             std.log.err("Couldn't handle connection: {}", .{e});
-        //         };
-        //     }
-        // }.run, .{ con, allocator });
+        pool.spawnWg(&wgroup, struct {
+            fn run(
+                connection: std.net.Server.Connection,
+                a: std.mem.Allocator,
+            ) void {
+                var handler = ClientHanler.init(connection, a);
+                clients.append(handler) catch |e| {
+                    std.log.err("Can't append new client: {}", .{e});
+                };
+                defer disconnect(handler);
+                handler.handle() catch |e| {
+                    std.log.err("Couldn't handle connection: {}", .{e});
+                };
+            }
+        }.run, .{ con, allocator });
     }
 }
 
