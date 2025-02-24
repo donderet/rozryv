@@ -1,14 +1,28 @@
 const std = @import("std");
+const ClientHandler = @import("ClientHandler.zig");
 
 const Game = @This();
 
-allocator: std.mem.Allocator,
+const gpa = std.heap.GeneralPurposeAllocator(.{}){};
+const allocator = gpa.allocator();
+pub var name_list = std.ArrayList([]u8).init(allocator);
 
-player_count: u8 = 0,
-started: bool = false,
+pub const Player = struct {
+    handler: ClientHandler,
 
-pub fn init(a: std.mem.Allocator) Game {
-    return .{
-        .allocator = a,
-    };
-}
+    name: []u8,
+
+    pub fn init(name: []const u8, handler: ClientHandler) Player {
+        const p = .{
+            .handler = handler,
+            .name = allocator.dupe(u8, name),
+        };
+        name_list.append(name);
+        return p;
+    }
+
+    pub fn deinit(player: Player) void {
+        _ = name_list.swapRemove(player.handler.id);
+        allocator.free(player.name);
+    }
+};

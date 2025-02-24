@@ -23,16 +23,29 @@ pub fn init(
 }
 
 pub fn handle(handler: *const ClientHandler) !void {
-    const client_writer = handler.connection.stream.writer();
-    const client_reader = handler.connection.stream.reader();
+    const stream_writer = handler.connection.stream.writer();
+    const stream_reader = handler.connection.stream.reader();
+    const bw = std.io.BufferedWriter(1024, std.net.Stream.Writer).writer();
+    const writer = bw.any();
+
     var join_req: suharyk_prot.params.req_join = undefined;
-    try suharyk_prot.Suharyk.deserialize(&join_req, client_reader);
+    try suharyk_prot.Suharyk.deserialize(&join_req, writer);
+    bw.flush();
     std.log.debug(
         "{s} joined the game with protocol version {d}",
         .{ join_req.name, join_req.prot_ver },
     );
+    const resp: suharyk_prot.params.resp_join = .{
+        .ok = join_req.prot_ver == suharyk_prot.VERSION,
+        .members = null,
+    };
+    if (resp.ok) {
+        resp.members = Game.name_list.items;
+    }
+    try suharyk_prot.Suharyk.serialize(resp, writer);
+    bw.flush();
     while (true) {
-        const msg = try client_reader.readUntilDelimiterOrEofAlloc(
+        const msg = try stream_reader.readUntilDelimiterOrEofAlloc(
             handler.allocator,
             '\n',
             65535,
@@ -40,9 +53,7 @@ pub fn handle(handler: *const ClientHandler) !void {
         defer handler.allocator.free(msg);
 
         std.log.info("Recieved message: \"{s}\"", .{msg});
-        try client_writer.writeAll("Your message is: ");
-        try client_writer.writeAll(msg);
+        try stream_writer.writeAll("Your message is: ");
+        try stream_writer.writeAll(msg);
     }
 }
-
-// pub fn sendSuharyk(suharyk: suharyk_prot.suharyk_t) !void {}
