@@ -8,7 +8,7 @@ const ClientHandler = @This();
 id: usize,
 connection: std.net.Server.Connection,
 allocator: std.mem.Allocator,
-game: Game,
+player: Game.Player = undefined,
 
 pub fn init(
     con: std.net.Server.Connection,
@@ -17,22 +17,29 @@ pub fn init(
     return ClientHandler{
         .connection = con,
         .allocator = a,
-        .game = Game.init(a),
         .id = Listener.clients.items.len,
     };
 }
 
-pub fn handle(handler: *const ClientHandler) !void {
-    const client_writer = handler.connection.stream.writer();
-    const client_reader = handler.connection.stream.reader();
+pub fn handle(handler: *ClientHandler) !void {
+    var suharyk_bridge = suharyk_prot.Bridge.init(handler.connection, handler.allocator);
+
     var join_req: suharyk_prot.params.req_join = undefined;
-    try suharyk_prot.Suharyk.deserialize(&join_req, client_reader);
+    try suharyk_bridge.recieve(&join_req);
     std.log.debug(
         "{s} joined the game with protocol version {d}",
         .{ join_req.name, join_req.prot_ver },
     );
+    const protocol_matches = join_req.prot_ver == suharyk_prot.VERSION;
+    const resp: suharyk_prot.params.resp_join = .{
+        .ok = protocol_matches,
+        .members = if (protocol_matches) Game.name_list.items else null,
+    };
+    try suharyk_bridge.send(resp);
+    handler.player = try Game.Player.init(handler.id, join_req.name, suharyk_bridge);
+    defer handler.player.deinit();
     while (true) {
-        const msg = try client_reader.readUntilDelimiterOrEofAlloc(
+        const msg = try suharyk_bridge.br.reader().readUntilDelimiterOrEofAlloc(
             handler.allocator,
             '\n',
             65535,
@@ -40,9 +47,5 @@ pub fn handle(handler: *const ClientHandler) !void {
         defer handler.allocator.free(msg);
 
         std.log.info("Recieved message: \"{s}\"", .{msg});
-        try client_writer.writeAll("Your message is: ");
-        try client_writer.writeAll(msg);
     }
 }
-
-// pub fn sendSuharyk(suharyk: suharyk_prot.suharyk_t) !void {}
