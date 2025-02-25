@@ -10,6 +10,7 @@ pub var name_list = std.ArrayList([]u8).init(allocator);
 
 pub const Player = struct {
     id: usize,
+    disconnect: bool,
     suharyk_bridge: suharyk.Bridge,
 
     name: []u8,

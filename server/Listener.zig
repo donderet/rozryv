@@ -1,5 +1,5 @@
 const std = @import("std");
-const ClientHanler = @import("./ClientHandler.zig");
+const Client = @import("./ClientHandler.zig");
 
 const listener_thread: std.Thread = undefined;
 var wgroup: std.Thread.WaitGroup = .{};
@@ -7,13 +7,13 @@ var pool: std.Thread.Pool = undefined;
 
 var server: std.net.Server = undefined;
 
-pub var clients: std.ArrayList(ClientHanler) = undefined;
+pub var clients: std.ArrayList(Client) = undefined;
 
 pub fn start(
     addr: std.net.Address,
     allocator: std.mem.Allocator,
 ) !void {
-    clients = std.ArrayList(ClientHanler).init(allocator);
+    clients = std.ArrayList(Client).init(allocator);
     defer clients.deinit();
     server = try addr.listen(.{});
     defer server.deinit();
@@ -37,12 +37,12 @@ fn listen(allocator: std.mem.Allocator) !void {
                 connection: std.net.Server.Connection,
                 a: std.mem.Allocator,
             ) void {
-                var handler = ClientHanler.init(connection, a);
-                clients.append(handler) catch |e| {
+                var client = Client.init(connection, a);
+                clients.append(client) catch |e| {
                     std.log.err("Can't append new client: {}", .{e});
                 };
-                defer disconnect(handler);
-                handler.handle() catch |e| {
+                defer disconnect(client);
+                client.handle() catch |e| {
                     std.log.err("Couldn't handle connection: {}", .{e});
                 };
             }
@@ -50,10 +50,10 @@ fn listen(allocator: std.mem.Allocator) !void {
     }
 }
 
-fn disconnect(handler: ClientHanler) void {
-    _ = clients.swapRemove(handler.id);
-    if (clients.items.len != 0) {
-        clients.items[handler.id].id = handler.id;
+fn disconnect(client: Client) void {
+    _ = clients.swapRemove(client.id);
+    if (client.id != clients.items.len and clients.items.len != 0) {
+        clients.items[client.id].id = client.id;
     }
-    std.log.debug("Closed connection for {}", .{handler.connection.address});
+    std.log.debug("Closed connection for {}", .{client.connection.address});
 }
