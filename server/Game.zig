@@ -1,5 +1,4 @@
 const std = @import("std");
-const ClientHandler = @import("ClientHandler.zig");
 const suharyk = @import("suharyk");
 
 const Game = @This();
@@ -10,7 +9,7 @@ pub var name_list = std.ArrayList([]u8).init(allocator);
 
 pub const Player = struct {
     id: usize,
-    disconnect: bool,
+    disconnect: bool = false,
     suharyk_bridge: suharyk.Bridge,
 
     name: []u8,

@@ -1,21 +1,17 @@
 const std = @import("std");
 
-pub const params = @import("action_params.zig");
+pub const packet = @import("packet.zig");
 
 pub const VERSION: u8 = 0;
 
-pub const ClientAction = enum {
-    Leave,
+pub const client_hello = struct {
+    prot_ver: @TypeOf(VERSION),
+    name: []u8,
 };
 
-pub const ServerAction = enum {
-    // TODO
-    BroadcastJoin,
-};
-
-pub const Error = enum {
-    InvalidRequest,
-    ProtocolVersionMismatch,
+pub const server_hello = struct {
+    ok: bool,
+    members: ?[][]u8,
 };
 
 comptime {
@@ -50,6 +46,15 @@ pub const Bridge = struct {
     ) !void {
         const obj_t = @TypeOf(obj);
         switch (@typeInfo(obj_t)) {
+            .Union => |u| {
+                const tag_type = u.tag_type orelse
+                    @compileError(std.fmt.comptimePrint(
+                    "Union {s} isn't tagged.",
+                    .{@typeName(obj_t)},
+                ));
+                try bridge.send(@intFromEnum(obj));
+                try bridge.send(@as(tag_type, obj));
+            },
             .Struct => |s| {
                 inline for (s.fields) |f|
                     try send(
@@ -58,7 +63,7 @@ pub const Bridge = struct {
                     );
             },
             .Int => try bridge.bw.writer().writeInt(
-                @TypeOf(obj),
+                std.math.ByteAlignedInt(@TypeOf(obj)),
                 @intCast(obj),
                 .little,
             ),
@@ -113,10 +118,36 @@ pub const Bridge = struct {
                 .{@TypeOf(obj)},
             ));
         }
+        if (obj_ti.Pointer.is_const) {
+            @compileError(std.fmt.comptimePrint(
+                "Cannot recieve to a const pointer {any}. ",
+                .{@TypeOf(obj)},
+            ));
+        }
 
         const deref_t = @TypeOf(obj.*);
         const type_info = @typeInfo(deref_t);
-        return switch (type_info) {
+        switch (type_info) {
+            .Union => |u| u_blk: {
+                const tag_type = u.tag_type orelse
+                    @compileError(std.fmt.comptimePrint(
+                    "Union {s} isn't tagged.",
+                    .{@typeName(deref_t)},
+                ));
+                var tag_id: tag_type = undefined;
+                try bridge.recieve(&tag_id);
+                inline for (std.meta.fields(deref_t)) |f| {
+                    if (@field(tag_type, f.name) == tag_id) {
+                        var val: f.type = undefined;
+                        try bridge.recieve(@as(
+                            *f.type,
+                            &val,
+                        ));
+                        obj.* = @unionInit(deref_t, f.name, val);
+                        break :u_blk;
+                    }
+                }
+            },
             .Struct => |s| {
                 inline for (s.fields) |f| {
                     const field_ti = @typeInfo(f.type);
@@ -130,10 +161,14 @@ pub const Bridge = struct {
             .Int => {
                 obj.* = @intCast(try bridge.br.reader().readInt(deref_t, .little));
             },
-            .Enum => |e| obj.* = @enumFromInt(try recieve(
-                bridge,
-                @as(e.tag_type, obj.*),
-            )),
+            .Enum => |e| {
+                const int_t = getEnumTagType(e);
+                var tag_t_int: int_t = undefined;
+                try bridge.recieve(
+                    @as(*int_t, &tag_t_int),
+                );
+                obj.* = @enumFromInt(tag_t_int);
+            },
             .Bool => obj.* = try bridge.br.readByte() == 1,
             .Array => {
                 try bridge.br.readNoEof(obj);
@@ -160,10 +195,24 @@ pub const Bridge = struct {
                     .{@TypeOf(obj)},
                 )),
             },
+            .Void => {},
             else => @compileError(std.fmt.comptimePrint(
                 "Unimplemented type: {}",
                 .{deref_t},
             )),
-        };
+        }
     }
 };
+
+fn getEnumTagType(e: std.builtin.Type.Enum) type {
+    comptime var int_t: type = undefined;
+    if (e.is_exhaustive) {
+        int_t = std.math.ByteAlignedInt(std.meta.Int(
+            .unsigned,
+            e.fields.len,
+        ));
+    } else {
+        int_t = std.math.ByteAlignedInt(e.tag_type);
+    }
+    return int_t;
+}

@@ -1,5 +1,5 @@
 const std = @import("std");
-const Client = @import("./ClientHandler.zig");
+const Client = @import("./Client.zig");
 
 const listener_thread: std.Thread = undefined;
 var wgroup: std.Thread.WaitGroup = .{};
