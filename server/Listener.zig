@@ -44,6 +44,7 @@ fn listen(allocator: std.mem.Allocator) !void {
                 defer disconnect(client);
                 client.handle() catch |e| {
                     std.log.err("Couldn't handle connection: {}", .{e});
+                    std.log.debug("{any}", .{@errorReturnTrace()});
                 };
             }
         }.run, .{ con, allocator });
@@ -55,5 +56,5 @@ fn disconnect(client: Client) void {
     if (client.id != clients.items.len and clients.items.len != 0) {
         clients.items[client.id].id = client.id;
     }
-    std.log.debug("Closed connection for {}", .{client.connection.address});
+    std.log.info("Closed connection for {}", .{client.connection.address});
 }

@@ -24,7 +24,8 @@ comptime {
     );
 }
 
-pub const Bridge = struct {
+/// Handles two-way communication between client and server using Suharyk protocol.
+pub const Duplex = struct {
     allocator: std.mem.Allocator,
     bw: std.io.BufferedWriter(4096, std.net.Stream.Writer),
     br: std.io.BufferedReader(4096, std.net.Stream.Reader),
@@ -32,7 +33,7 @@ pub const Bridge = struct {
     pub fn init(
         connection: std.net.Server.Connection,
         allocator: std.mem.Allocator,
-    ) Bridge {
+    ) Duplex {
         return .{
             .allocator = allocator,
             .bw = std.io.bufferedWriter(connection.stream.writer()),
@@ -40,8 +41,28 @@ pub const Bridge = struct {
         };
     }
 
+    /// Frees recieved packet
+    pub fn freePacket(duplex: Duplex, p: anytype) void {
+        const p_ti = @typeInfo(@TypeOf(p));
+        if (p_ti == .Union) {
+            const active_field = p_ti.Union.tag_type orelse
+                @compileError(std.fmt.comptimePrint(
+                "Union {s} isn't tagged.",
+                .{@typeName(packet)},
+            ));
+            duplex.freePacket(@as(active_field, p));
+        } else if (p_ti == .Struct) {
+            inline for (p_ti.Struct.fields) |f| {
+                duplex.freePacket(@field(p, f.name));
+            }
+        } else if (p_ti == .Pointer and p_ti.Pointer.size == .Slice) {
+            duplex.allocator.free(p);
+            return;
+        }
+    }
+
     pub fn send(
-        bridge: *Bridge,
+        duplex: *Duplex,
         obj: anytype,
     ) !void {
         const obj_t = @TypeOf(obj);
@@ -52,41 +73,41 @@ pub const Bridge = struct {
                     "Union {s} isn't tagged.",
                     .{@typeName(obj_t)},
                 ));
-                try bridge.send(@intFromEnum(obj));
-                try bridge.send(@as(tag_type, obj));
+                try duplex.send(@intFromEnum(obj));
+                try duplex.send(@as(tag_type, obj));
             },
             .Struct => |s| {
                 inline for (s.fields) |f|
                     try send(
-                        bridge,
+                        duplex,
                         @field(obj, f.name),
                     );
             },
-            .Int => try bridge.bw.writer().writeInt(
+            .Int => try duplex.bw.writer().writeInt(
                 std.math.ByteAlignedInt(@TypeOf(obj)),
                 @intCast(obj),
                 .little,
             ),
             .Enum => try send(
-                bridge,
+                duplex,
                 @intFromEnum(obj),
             ),
-            .Bool => try bridge.bw.writer().writeByte(@intFromBool(obj)),
-            .Array => try bridge.bw.writer().writeAll(@ptrCast(&obj)),
+            .Bool => try duplex.bw.writer().writeByte(@intFromBool(obj)),
+            .Array => try duplex.bw.writer().writeAll(@ptrCast(&obj)),
             .Pointer => |p| switch (p.size) {
                 .One => try send(
-                    bridge,
+                    duplex,
                     obj.*,
                 ),
                 .Slice => {
-                    try send(bridge, obj.len);
+                    try send(duplex, obj.len);
                     switch (@typeInfo(p.child)) {
                         .Int => {
-                            try bridge.bw.writer().writeAll(@ptrCast(obj));
+                            try duplex.bw.writer().writeAll(@ptrCast(obj));
                         },
                         else => {
                             for (obj) |e| {
-                                try send(bridge, e);
+                                try send(duplex, e);
                             }
                         },
                     }
@@ -98,17 +119,20 @@ pub const Bridge = struct {
             },
             .Optional => if (obj) |o| {
                 try send(
-                    bridge,
+                    duplex,
                     o,
                 );
             },
             else => @compileError(std.fmt.comptimePrint("Unsupported type: {}", .{@TypeOf(obj)})),
         }
-        try bridge.bw.flush();
+        try duplex.bw.flush();
     }
 
+    /// Recieve packet to obj
+    /// obj must be a pointer to an object
+    /// Caller must free the recieved object using freePacket
     pub fn recieve(
-        bridge: *Bridge,
+        duplex: *Duplex,
         obj: anytype,
     ) !void {
         const obj_ti = @typeInfo(@TypeOf(obj));
@@ -135,11 +159,11 @@ pub const Bridge = struct {
                     .{@typeName(deref_t)},
                 ));
                 var tag_id: tag_type = undefined;
-                try bridge.recieve(&tag_id);
+                try duplex.recieve(&tag_id);
                 inline for (std.meta.fields(deref_t)) |f| {
                     if (@field(tag_type, f.name) == tag_id) {
                         var val: f.type = undefined;
-                        try bridge.recieve(@as(
+                        try duplex.recieve(@as(
                             *f.type,
                             &val,
                         ));
@@ -152,39 +176,39 @@ pub const Bridge = struct {
                 inline for (s.fields) |f| {
                     const field_ti = @typeInfo(f.type);
                     if (field_ti == .Pointer and field_ti.Pointer.size == .One) {
-                        try recieve(bridge, @field(obj.*, f.name));
+                        try recieve(duplex, @field(obj.*, f.name));
                     } else {
-                        try recieve(bridge, &@field(obj.*, f.name));
+                        try recieve(duplex, &@field(obj.*, f.name));
                     }
                 }
             },
             .Int => {
-                obj.* = @intCast(try bridge.br.reader().readInt(deref_t, .little));
+                obj.* = @intCast(try duplex.br.reader().readInt(deref_t, .little));
             },
             .Enum => |e| {
                 const int_t = getEnumTagType(e);
                 var tag_t_int: int_t = undefined;
-                try bridge.recieve(
+                try duplex.recieve(
                     @as(*int_t, &tag_t_int),
                 );
                 obj.* = @enumFromInt(tag_t_int);
             },
-            .Bool => obj.* = try bridge.br.readByte() == 1,
+            .Bool => obj.* = try duplex.br.readByte() == 1,
             .Array => {
-                try bridge.br.readNoEof(obj);
+                try duplex.br.readNoEof(obj);
             },
             .Pointer => |p| switch (p.size) {
                 .Slice => {
-                    const len = try bridge.br.reader().readInt(usize, .little);
-                    obj.* = try bridge.allocator.alloc(p.child, len);
-                    errdefer bridge.allocator.free(obj.*);
+                    const len = try duplex.br.reader().readInt(usize, .little);
+                    obj.* = try duplex.allocator.alloc(p.child, len);
+                    errdefer duplex.allocator.free(obj.*);
                     switch (@typeInfo(p.child)) {
                         .Int => {
-                            _ = try bridge.br.reader().readAll(@ptrCast(obj.*));
+                            _ = try duplex.br.reader().readAll(@ptrCast(obj.*));
                         },
                         else => {
                             for (0..len) |i| {
-                                try recieve(bridge, &obj.*[i]);
+                                try recieve(duplex, &obj.*[i]);
                             }
                         },
                     }
