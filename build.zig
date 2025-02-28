@@ -1,6 +1,10 @@
 const std = @import("std");
 
 pub fn build(b: *std.Build) void {
+    const server_exe_name = "rozryv-server";
+    const server_options = b.addOptions();
+    server_options.addOption([]const u8, "exe_name", server_exe_name);
+
     const target = b.standardTargetOptions(.{});
 
     const optimize = b.standardOptimizeOption(.{});
@@ -12,7 +16,7 @@ pub fn build(b: *std.Build) void {
     });
 
     const server_exe = b.addExecutable(.{
-        .name = "rozryv-server",
+        .name = server_exe_name,
         .root_source_file = b.path("server/main.zig"),
         .target = target,
         .optimize = optimize,
@@ -27,6 +31,8 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     game_exe.root_module.addImport("suharyk", suharyk_mod);
+    game_exe.root_module.addOptions("server", server_options);
+
     b.installArtifact(game_exe);
 
     {
