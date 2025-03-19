@@ -1,60 +1,85 @@
 const std = @import("std");
-const Client = @import("./Client.zig");
 
-const listener_thread: std.Thread = undefined;
+const suharyk = @import("suharyk");
+
+const Duplex = @import("Duplex.zig");
+const Game = @import("Game.zig");
+const Player = @import("./game/Player.zig");
+
 var wgroup: std.Thread.WaitGroup = .{};
 var pool: std.Thread.Pool = undefined;
 
 var server: std.net.Server = undefined;
 
-pub var clients: std.ArrayList(Client) = undefined;
-
 pub fn start(
     addr: std.net.Address,
     allocator: std.mem.Allocator,
 ) !void {
-    clients = std.ArrayList(Client).init(allocator);
-    defer clients.deinit();
     server = try addr.listen(.{});
-    defer server.deinit();
-
-    std.log.info("Starting listening on {d}", .{addr.getPort()});
-
     try pool.init(.{
         .allocator = allocator,
         .n_jobs = 2,
     });
-    defer pool.deinit();
-    try listen(allocator);
-}
+    defer {
+        server.deinit();
+        pool.deinit();
+    }
 
-fn listen(allocator: std.mem.Allocator) !void {
+    std.log.info("Starting listening on {d}", .{addr.getPort()});
+
     while (true) {
         const con = try server.accept();
-
-        pool.spawnWg(&wgroup, struct {
-            fn run(
-                connection: std.net.Server.Connection,
-                a: std.mem.Allocator,
-            ) void {
-                var client = Client.init(connection, a);
-                clients.append(client) catch |e| {
-                    std.log.err("Can't append new client: {}", .{e});
-                };
-                defer disconnect(client);
-                client.handle() catch |e| {
-                    std.log.err("Couldn't handle connection: {}", .{e});
-                    std.log.debug("{any}", .{@errorReturnTrace()});
-                };
-            }
-        }.run, .{ con, allocator });
+        pool.spawnWg(
+            &wgroup,
+            struct {
+                fn run(
+                    connection: std.net.Server.Connection,
+                    a: std.mem.Allocator,
+                ) void {
+                    connectNewClient(connection, a) catch |e| {
+                        std.log.err("Error while handling connection: {any}", .{e});
+                        std.log.debug("{any}", .{@errorReturnTrace()});
+                    };
+                }
+            }.run,
+            .{ con, allocator },
+        );
     }
 }
 
-fn disconnect(client: Client) void {
-    _ = clients.swapRemove(client.id);
-    if (client.id != clients.items.len and clients.items.len != 0) {
-        clients.items[client.id].id = client.id;
+fn connectNewClient(
+    connection: std.net.Server.Connection,
+    a: std.mem.Allocator,
+) !void {
+    var suharyk_duplex = suharyk.Duplex.init(
+        connection,
+        a,
+    );
+    var duplex = Duplex.init(suharyk_duplex);
+
+    var join_req: suharyk.client_hello = undefined;
+    try suharyk_duplex.recieve(&join_req);
+    const protocol_matches = join_req.prot_ver == suharyk.VERSION;
+    const resp: suharyk.server_hello = .{
+        .ok = protocol_matches,
+        .members = if (protocol_matches) Game.name_list.items else null,
+    };
+    try suharyk_duplex.send(resp);
+    if (!resp.ok) {
+        std.log.info(
+            "Protocol version mismatched for player {s}",
+            .{join_req.name},
+        );
+        return;
     }
-    std.log.info("Closed connection for {}", .{client.connection.address});
+    var player = try Player.init(
+        a,
+        Game.playerCount(),
+        join_req.name,
+        &duplex,
+    );
+    defer player.deinit();
+    try Game.addPlayer(&player);
+    suharyk_duplex.freePacket(join_req);
+    try Game.playerDuplexLoop(&player);
 }
