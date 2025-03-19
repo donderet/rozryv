@@ -44,18 +44,18 @@ pub const Duplex = struct {
     /// Frees recieved packet
     pub fn freePacket(duplex: Duplex, p: anytype) void {
         const p_ti = @typeInfo(@TypeOf(p));
-        if (p_ti == .Union) {
-            const active_field = p_ti.Union.tag_type orelse
+        if (p_ti == .@"union") {
+            const active_field = p_ti.@"union".tag_type orelse
                 @compileError(std.fmt.comptimePrint(
-                "Union {s} isn't tagged.",
-                .{@typeName(packet)},
-            ));
+                    "Union {s} isn't tagged.",
+                    .{@typeName(packet)},
+                ));
             duplex.freePacket(@as(active_field, p));
-        } else if (p_ti == .Struct) {
-            inline for (p_ti.Struct.fields) |f| {
+        } else if (p_ti == .@"struct") {
+            inline for (p_ti.@"struct".fields) |f| {
                 duplex.freePacket(@field(p, f.name));
             }
-        } else if (p_ti == .Pointer and p_ti.Pointer.size == .Slice) {
+        } else if (p_ti == .pointer and p_ti.pointer.size == .slice) {
             duplex.allocator.free(p);
             return;
         }
@@ -67,42 +67,42 @@ pub const Duplex = struct {
     ) !void {
         const obj_t = @TypeOf(obj);
         switch (@typeInfo(obj_t)) {
-            .Union => |u| {
+            .@"union" => |u| {
                 const tag_type = u.tag_type orelse
                     @compileError(std.fmt.comptimePrint(
-                    "Union {s} isn't tagged.",
-                    .{@typeName(obj_t)},
-                ));
+                        "Union {s} isn't tagged.",
+                        .{@typeName(obj_t)},
+                    ));
                 try duplex.send(@intFromEnum(obj));
                 try duplex.send(@as(tag_type, obj));
             },
-            .Struct => |s| {
+            .@"struct" => |s| {
                 inline for (s.fields) |f|
                     try send(
                         duplex,
                         @field(obj, f.name),
                     );
             },
-            .Int => try duplex.bw.writer().writeInt(
+            .int => try duplex.bw.writer().writeInt(
                 std.math.ByteAlignedInt(@TypeOf(obj)),
                 @intCast(obj),
                 .little,
             ),
-            .Enum => try send(
+            .@"enum" => try send(
                 duplex,
                 @intFromEnum(obj),
             ),
-            .Bool => try duplex.bw.writer().writeByte(@intFromBool(obj)),
-            .Array => try duplex.bw.writer().writeAll(@ptrCast(&obj)),
-            .Pointer => |p| switch (p.size) {
-                .One => try send(
+            .bool => try duplex.bw.writer().writeByte(@intFromBool(obj)),
+            .array => try duplex.bw.writer().writeAll(@ptrCast(&obj)),
+            .pointer => |p| switch (p.size) {
+                .one => try send(
                     duplex,
                     obj.*,
                 ),
-                .Slice => {
+                .slice => {
                     try send(duplex, obj.len);
                     switch (@typeInfo(p.child)) {
-                        .Int => {
+                        .int => {
                             try duplex.bw.writer().writeAll(@ptrCast(obj));
                         },
                         else => {
@@ -117,7 +117,7 @@ pub const Duplex = struct {
                     .{@TypeOf(obj)},
                 )),
             },
-            .Optional => if (obj) |o| {
+            .optional => if (obj) |o| {
                 try send(
                     duplex,
                     o,
@@ -136,13 +136,13 @@ pub const Duplex = struct {
         obj: anytype,
     ) !void {
         const obj_ti = @typeInfo(@TypeOf(obj));
-        if (obj_ti != .Pointer or obj_ti.Pointer.size != .One) {
+        if (obj_ti != .pointer or obj_ti.pointer.size != .one) {
             @compileError(std.fmt.comptimePrint(
                 "Expected pointer to object, got {}",
                 .{@TypeOf(obj)},
             ));
         }
-        if (obj_ti.Pointer.is_const) {
+        if (obj_ti.pointer.is_const) {
             @compileError(std.fmt.comptimePrint(
                 "Cannot recieve to a const pointer {any}. ",
                 .{@TypeOf(obj)},
@@ -152,12 +152,12 @@ pub const Duplex = struct {
         const deref_t = @TypeOf(obj.*);
         const type_info = @typeInfo(deref_t);
         switch (type_info) {
-            .Union => |u| u_blk: {
+            .@"union" => |u| u_blk: {
                 const tag_type = u.tag_type orelse
                     @compileError(std.fmt.comptimePrint(
-                    "Union {s} isn't tagged.",
-                    .{@typeName(deref_t)},
-                ));
+                        "Union {s} isn't tagged.",
+                        .{@typeName(deref_t)},
+                    ));
                 var tag_id: tag_type = undefined;
                 try duplex.recieve(&tag_id);
                 inline for (std.meta.fields(deref_t)) |f| {
@@ -172,20 +172,20 @@ pub const Duplex = struct {
                     }
                 }
             },
-            .Struct => |s| {
+            .@"struct" => |s| {
                 inline for (s.fields) |f| {
                     const field_ti = @typeInfo(f.type);
-                    if (field_ti == .Pointer and field_ti.Pointer.size == .One) {
+                    if (field_ti == .pointer and field_ti.pointer.size == .one) {
                         try recieve(duplex, @field(obj.*, f.name));
                     } else {
                         try recieve(duplex, &@field(obj.*, f.name));
                     }
                 }
             },
-            .Int => {
+            .int => {
                 obj.* = @intCast(try duplex.br.reader().readInt(deref_t, .little));
             },
-            .Enum => |e| {
+            .@"enum" => |e| {
                 const int_t = getEnumTagType(e);
                 var tag_t_int: int_t = undefined;
                 try duplex.recieve(
@@ -193,17 +193,17 @@ pub const Duplex = struct {
                 );
                 obj.* = @enumFromInt(tag_t_int);
             },
-            .Bool => obj.* = try duplex.br.readByte() == 1,
-            .Array => {
+            .bool => obj.* = try duplex.br.readByte() == 1,
+            .array => {
                 try duplex.br.readNoEof(obj);
             },
-            .Pointer => |p| switch (p.size) {
-                .Slice => {
+            .pointer => |p| switch (p.size) {
+                .slice => {
                     const len = try duplex.br.reader().readInt(usize, .little);
                     obj.* = try duplex.allocator.alloc(p.child, len);
                     errdefer duplex.allocator.free(obj.*);
                     switch (@typeInfo(p.child)) {
-                        .Int => {
+                        .int => {
                             _ = try duplex.br.reader().readAll(@ptrCast(obj.*));
                         },
                         else => {
@@ -213,13 +213,13 @@ pub const Duplex = struct {
                         },
                     }
                 },
-                .One => unreachable,
+                .one => unreachable,
                 else => @compileError(std.fmt.comptimePrint(
                     "Unsupported pointer type: {}",
                     .{@TypeOf(obj)},
                 )),
             },
-            .Void => {},
+            .void => {},
             else => @compileError(std.fmt.comptimePrint(
                 "Unimplemented type: {}",
                 .{deref_t},
