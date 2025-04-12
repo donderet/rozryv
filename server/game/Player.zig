@@ -3,6 +3,7 @@ const std = @import("std");
 const suharyk = @import("suharyk");
 
 const Game = @import("../Game.zig");
+const Device = @import("Device.zig");
 const Duplex = @import("../Duplex.zig");
 
 const Player = @This();
@@ -15,6 +16,7 @@ disconnect: bool = false,
 is_host: bool = false,
 name: []u8,
 money_amount: usize = 0,
+device: *Device = undefined,
 
 pub fn init(
     allocator: std.mem.Allocator,

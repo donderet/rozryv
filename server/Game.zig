@@ -1,11 +1,17 @@
 const std = @import("std");
+
 const suharyk = @import("suharyk");
-const Duplex = @import("Duplex.zig");
-const Player = @import("./game/Player.zig");
-const SyncCircularQueue = @import("./SyncCircularQueue.zig");
+const entities = suharyk.entities;
+const Device = entities.Device;
 const ServerPayload = suharyk.packet.ServerPayload;
 const ClientPayload = suharyk.packet.ClientPayload;
 
+const Player = @import("./game/Player.zig");
+const VBoard = @import("./game/VBoard.zig");
+const SyncCircularQueue = @import("./SyncCircularQueue.zig");
+const Duplex = @import("Duplex.zig");
+
+const Tickable = @import("./game/Tickable.zig");
 const Game = @This();
 const ClientRequest = struct {
     player: *Player,
@@ -13,13 +19,18 @@ const ClientRequest = struct {
 };
 
 var gpa: std.heap.DebugAllocator(.{}) = .init;
-const allocator = gpa.allocator();
+pub const allocator = gpa.allocator();
+
+const seed: u64 = undefined;
+pub var prng = std.Random.Pcg.init(seed).random();
 
 var players: std.ArrayListUnmanaged(*Player) = .empty;
 var game_thread: ?std.Thread = null;
 // Flyweight pattern
 pub var name_list: std.ArrayListUnmanaged([]u8) = .empty;
 var cmd_queue: SyncCircularQueue.of(ClientRequest, 512) = .{};
+var vboard: VBoard = undefined;
+pub var on_tick: std.ArrayListUnmanaged(Tickable) = .empty;
 
 pub fn addPlayer(player: *Player) !void {
     try players.append(allocator, player);
@@ -76,10 +87,15 @@ pub inline fn playerCount() usize {
     return players.items.len;
 }
 
+pub inline fn getPlayers() @TypeOf(players) {
+    return players;
+}
+
 pub inline fn gameStarted() bool {
     return game_thread != null;
 }
 
 fn start() void {
     std.log.info("Game started", .{});
+    vboard.generate();
 }

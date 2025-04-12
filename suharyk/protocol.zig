@@ -14,6 +14,8 @@ pub const server_hello = struct {
     members: ?[][]u8,
 };
 
+pub const entities = @import("entities.zig");
+
 comptime {
     // Only 64-bit LE architectures are supported
     std.debug.assert(

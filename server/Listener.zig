@@ -59,10 +59,10 @@ fn connectNewClient(
 
     var join_req: suharyk.client_hello = undefined;
     try suharyk_duplex.recieve(&join_req);
-    const protocol_matches = join_req.prot_ver == suharyk.VERSION;
+    const accept_join = !Game.gameStarted() and join_req.prot_ver == suharyk.VERSION;
     const resp: suharyk.server_hello = .{
-        .ok = protocol_matches,
-        .members = if (protocol_matches) Game.name_list.items else null,
+        .ok = accept_join,
+        .members = if (accept_join) Game.name_list.items else null,
     };
     try suharyk_duplex.send(resp);
     if (!resp.ok) {
