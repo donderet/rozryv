@@ -1,3 +1,4 @@
+const entities = @import("entities.zig");
 const prot = @import("protocol.zig");
 
 pub const ServerPayload = union(enum) {
@@ -10,6 +11,12 @@ pub const ServerPayload = union(enum) {
     },
     BroadcastLeave: struct {
         name: []u8,
+    },
+    GameStarted: struct {
+        device: entities.Device,
+    },
+    UpdateConnections: struct {
+        device: entities.Device,
     },
 };
 

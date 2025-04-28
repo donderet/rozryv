@@ -7,6 +7,7 @@ const SuhDevice = suh_entities.Device;
 const Game = @import("../Game.zig");
 const allocator = Game.allocator;
 const Device = @import("Device.zig");
+const RandomTickable = @import("RandomTickable.zig");
 
 const VBoard = @This();
 const v_map_side = 16;
@@ -52,7 +53,31 @@ pub fn generate() void {
         device.suh_entity.ip = getRndIp();
         device.suh_entity.kind = Game.prng.enumValue(SuhDevice.Kind);
     }
-    for (devices) |*device| generateConnections(device);
+    for (0..devices.len) |i| generateConnections(i);
+    const rt: RandomTickable = .{ .ctx = undefined, .vtable = .{
+        .{
+            .interval = 2,
+            .onRandomTick = &randomizeConnection,
+        },
+    } };
+    Game.on_tick.append(Game.allocator, rt.asTickable());
+}
+
+fn randomizeConnection(_: *anyopaque) void {
+    while (true) {
+        const rnd_i = Game.prng.uintLessThan(usize, devices);
+        if (devices[rnd_i].suh_entity.kind == .Player)
+            continue;
+        const rnd_dev = devices[rnd_i];
+        const disconnect = Game.prng.boolean();
+        if (disconnect) {
+            const con_i = Game.prng.uintLessThan(usize, rnd_dev.connections.items.len);
+            // TODO: notify about removing
+            rnd_dev.connections.swapRemove(con_i);
+            return;
+        }
+        generateConnection(rnd_dev, rnd_i);
+    }
 }
 
 fn getRndIp() u32 {
@@ -66,23 +91,37 @@ fn getRndIp() u32 {
     return rnd_ip.int;
 }
 
-fn generateConnections(device: *Device) void {
+fn generateConnections(i: usize) void {
+    const device = devices[i];
     if (device.suh_entity.kind == .Player) return;
     const max_connections = getMaxConnections(device.suh_entity.kind);
     defer device.commitConnections();
-    for (0..max_connections) |i| {
-        while (true) {
-            const rnd_point = getRndPointAround(i / v_map_side, i % v_map_side, 4);
+    for (0..max_connections) |_| {
+        generateConnection(i);
+    }
+}
 
-            if (isValidConnection(
-                device.suh_entity,
-                devices[rnd_point].suh_entity,
-            )) {
-                device.connection_list.append(allocator, devices[rnd_point].suh_entity);
-                break;
-            }
+fn generateConnection(i: usize) void {
+    for (0..16) |_| {
+        const rnd_point = getRndPointAround(i / v_map_side, i % v_map_side, 4);
+
+        if (isValidConnection(
+            devices[i].suh_entity,
+            devices[rnd_point].suh_entity,
+        ) and !std.mem.containsAtLeast(
+            *Device,
+            devices[i].connections.items,
+            1,
+            devices[rnd_point],
+        )) {
+            devices[i].connections.append(allocator, devices[rnd_point].suh_entity);
+            break;
         }
     }
+    std.log.debug(
+        "Couldn't generate connection for ({d}, {d})",
+        .{ i / v_map_side, i % v_map_side, 4 },
+    );
 }
 
 /// Checks if randomly generated connection is valid

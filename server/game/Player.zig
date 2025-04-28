@@ -1,15 +1,19 @@
 const std = @import("std");
 
 const suharyk = @import("suharyk");
+const ServerPayload = suharyk.packet.ServerPayload;
+const ClientPayload = suharyk.packet.ClientPayload;
 
-const Game = @import("../Game.zig");
-const Device = @import("Device.zig");
 const Duplex = @import("../Duplex.zig");
+const Game = @import("../Game.zig");
+const SyncCircularQueue = @import("../SyncCircularQueue.zig");
+const Device = @import("Device.zig");
 
 const Player = @This();
 
 allocator: std.mem.Allocator,
 duplex: *Duplex,
+server_req_queue: SyncCircularQueue.of(ServerPayload, 128) = .{},
 id: usize,
 disconnect: bool = false,
 
@@ -57,4 +61,49 @@ pub fn startGame(player: *Player) !void {
 pub fn deinit(player: *Player) void {
     _ = Game.name_list.swapRemove(player.id);
     player.allocator.free(player.name);
+}
+
+pub fn duplexLoop(player: *Player) !void {
+    var players = &Game.players;
+    defer {
+        _ = players.swapRemove(player.id);
+        if (player.id != players.items.len)
+            players.items[player.id].id = player.id;
+        const left_msg: ServerPayload = .{
+            .BroadcastLeave = .{
+                .name = player.name,
+            },
+        };
+        Game.broadcast(player.id, left_msg);
+        std.log.info(
+            "{s} left the game",
+            .{player.name},
+        );
+    }
+    loop: while (!player.disconnect) {
+        while (player.server_req_queue.dequeue()) |req| {
+            player.duplex.send(req);
+        }
+        var pl: suharyk.packet.ClientPayload = undefined;
+        player.duplex.recieve(&pl) catch |e| switch (e) {
+            error.NoUpdates => {
+                std.Thread.sleep(1_000_000);
+                continue :loop;
+            },
+            error.ConnectionResetByPeer,
+            error.ConnectionTimedOut,
+            error.Canceled,
+            error.EndOfStream,
+            error.BrokenPipe,
+            error.NotOpenForReading,
+            => break :loop,
+            else => return e,
+        };
+        if (pl == .Leave) {
+            std.log.debug("Got Leave packet", .{});
+            break;
+        }
+
+        defer player.duplex.freePacket(pl);
+    }
 }

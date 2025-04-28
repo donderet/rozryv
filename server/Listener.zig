@@ -15,7 +15,9 @@ pub fn start(
     addr: std.net.Address,
     allocator: std.mem.Allocator,
 ) !void {
-    server = try addr.listen(.{});
+    server = try addr.listen(.{
+        .reuse_port = true,
+    });
     try pool.init(.{
         .allocator = allocator,
         .n_jobs = 2,
@@ -29,6 +31,11 @@ pub fn start(
 
     while (true) {
         const con = try server.accept();
+        setKeepalive(con.stream.handle) catch |e| {
+            std.log.debug("Can't set keepalive: {any}", .{e});
+            std.log.debug("{any}", .{@errorReturnTrace()});
+            continue;
+        };
         pool.spawnWg(
             &wgroup,
             struct {
@@ -43,6 +50,66 @@ pub fn start(
                 }
             }.run,
             .{ con, allocator },
+        );
+    }
+}
+
+fn setKeepalive(handle: std.posix.socket_t) !void {
+    try std.posix.setsockopt(
+        handle,
+        std.posix.SOL.SOCKET,
+        std.posix.SO.KEEPALIVE,
+        &std.mem.toBytes(@as(c_int, 1)),
+    );
+    const idle_sec = 5;
+    const intvl_sec = 1;
+    if (@import("builtin").os.tag == .windows) {
+        var keepalive_vals: std.os.windows.mst = extern struct {
+            onoff: u32 = 1,
+            keepalivetime: u32 = idle_sec * 1000,
+            keepaliveinterval: u32 = intvl_sec * 1000,
+        };
+
+        const SIO_KEEPALIVE_VALS: u32 = 2550136836;
+
+        const bytes_returned: std.os.windows.DWORD = undefined;
+        const result = std.os.windows.WSAIoctl(
+            handle,
+            SIO_KEEPALIVE_VALS,
+            @ptrCast(&keepalive_vals),
+            @sizeOf(keepalive_vals),
+            null,
+            0,
+            &bytes_returned,
+            null,
+            null,
+        );
+        if (result != 0) {
+            const e = std.os.windows.ws2_32.WSAGetLastError();
+            std.log.err(
+                "Failed to set keepalive options with error {d}",
+                .{e},
+            );
+            return error.WSAIoctlErr;
+        }
+    } else {
+        try std.posix.setsockopt(
+            handle,
+            std.posix.IPPROTO.TCP,
+            std.posix.TCP.KEEPIDLE,
+            &std.mem.toBytes(@as(c_int, idle_sec)),
+        );
+        try std.posix.setsockopt(
+            handle,
+            std.posix.IPPROTO.TCP,
+            std.posix.TCP.KEEPINTVL,
+            &std.mem.toBytes(@as(c_int, intvl_sec)),
+        );
+        try std.posix.setsockopt(
+            handle,
+            std.posix.IPPROTO.TCP,
+            std.posix.TCP.KEEPCNT,
+            &std.mem.toBytes(@as(c_int, 3)),
         );
     }
 }
@@ -81,5 +148,5 @@ fn connectNewClient(
     defer player.deinit();
     try Game.addPlayer(&player);
     suharyk_duplex.freePacket(join_req);
-    try Game.playerDuplexLoop(&player);
+    try player.duplexLoop(&player);
 }

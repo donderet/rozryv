@@ -4,6 +4,7 @@ const suharyk = @import("suharyk");
 const ServerPayload = suharyk.packet.ServerPayload;
 const ClientPayload = suharyk.packet.ClientPayload;
 
+// Decorator pattern
 suharyk_duplex: suharyk.Duplex,
 
 pub fn init(server_duplex: suharyk.Duplex) Duplex {
@@ -13,7 +14,12 @@ pub fn init(server_duplex: suharyk.Duplex) Duplex {
 }
 
 pub inline fn send(self: *Duplex, pl: ServerPayload) !void {
-    try self.suharyk_duplex.send(pl);
+    self.suharyk_duplex.send(pl) catch |e| {
+        // Connection is half-closed, close reading too
+        if (e == error.BrokenPipe)
+            self.suharyk_duplex.br.unbuffered_reader.stream.close();
+        return e;
+    };
 }
 
 pub inline fn recieve(self: *Duplex, pl: *ClientPayload) !void {

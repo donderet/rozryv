@@ -1,6 +1,7 @@
 const std = @import("std");
 
 pub const packet = @import("packet.zig");
+pub const net = @import("net.zig");
 
 pub const VERSION: u8 = 0;
 
@@ -28,9 +29,12 @@ comptime {
 
 /// Handles two-way communication between client and server using Suharyk protocol.
 pub const Duplex = struct {
+    pub const Reader = std.io.BufferedReader(4096, net.NetStreamReader);
+    pub const Writer = std.io.BufferedWriter(4096, std.net.Stream.Writer);
+
     allocator: std.mem.Allocator,
-    bw: std.io.BufferedWriter(4096, std.net.Stream.Writer),
-    br: std.io.BufferedReader(4096, std.net.Stream.Reader),
+    bw: Writer,
+    br: Reader,
 
     pub fn init(
         connection: std.net.Server.Connection,
@@ -39,7 +43,9 @@ pub const Duplex = struct {
         return .{
             .allocator = allocator,
             .bw = std.io.bufferedWriter(connection.stream.writer()),
-            .br = std.io.bufferedReader(connection.stream.reader()),
+            .br = std.io.bufferedReader(net.NetStreamReader{
+                .stream = connection.stream,
+            }),
         };
     }
 
@@ -125,7 +131,7 @@ pub const Duplex = struct {
                     o,
                 );
             },
-            else => @compileError(std.fmt.comptimePrint("Unsupported type: {}", .{@TypeOf(obj)})),
+            else => @compileError(std.fmt.comptimePrint("Unsupported type: {any}", .{@TypeOf(obj)})),
         }
         try duplex.bw.flush();
     }
