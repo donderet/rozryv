@@ -82,7 +82,12 @@ pub fn duplexLoop(player: *Player) !void {
     }
     loop: while (!player.disconnect) {
         while (player.server_req_queue.dequeue()) |req| {
-            player.duplex.send(req);
+            player.duplex.send(req) catch |e| switch (e) {
+                error.ConnectionResetByPeer,
+                error.BrokenPipe,
+                => break :loop,
+                else => return e,
+            };
         }
         var pl: suharyk.packet.ClientPayload = undefined;
         player.duplex.recieve(&pl) catch |e| switch (e) {
@@ -103,7 +108,10 @@ pub fn duplexLoop(player: *Player) !void {
             std.log.debug("Got Leave packet", .{});
             break;
         }
-
-        defer player.duplex.freePacket(pl);
+        // TODO: don't forget to clean up packets after consuming them in tick
+        Game.cmd_queue.enqueueWait(.{
+            .player = player,
+            .pl = pl,
+        });
     }
 }

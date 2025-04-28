@@ -11,7 +11,7 @@ pub fn of(comptime T: type, queue_max_size: len_t) type {
         first_i: len_t = 0,
         last_i: len_t = 0,
 
-        fn enqueueWait(queue: *SyncCircularQueue, pl: T) void {
+        pub fn enqueueWait(queue: *SyncCircularQueue, pl: T) void {
             queue.mut.lock();
             defer queue.mut.unlock();
             var i = queue.getNextLastIndex();
@@ -30,19 +30,19 @@ pub fn of(comptime T: type, queue_max_size: len_t) type {
             queue.last_i = i;
         }
 
-        inline fn hasMore(queue: SyncCircularQueue) bool {
+        pub inline fn hasMore(queue: SyncCircularQueue) bool {
             return queue.last_i != queue.first_i and queue.arr[queue.first_i] == null;
         }
 
-        inline fn len(queue: SyncCircularQueue) len_t {
+        pub inline fn len(queue: SyncCircularQueue) len_t {
             return (queue_max_size + queue.last_i - queue.first_i) % queue_max_size;
         }
 
-        inline fn getNextLastIndex(queue: SyncCircularQueue) len_t {
+        pub inline fn getNextLastIndex(queue: SyncCircularQueue) len_t {
             return (queue.last_i + 1) % queue_max_size;
         }
 
-        inline fn getNextIndex(queue: SyncCircularQueue) len_t {
+        pub inline fn getNextIndex(queue: SyncCircularQueue) len_t {
             return (queue.first_i + 1) % queue_max_size;
         }
 

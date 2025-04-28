@@ -72,8 +72,12 @@ fn randomizeConnection(_: *anyopaque) void {
         const disconnect = Game.prng.boolean();
         if (disconnect) {
             const con_i = Game.prng.uintLessThan(usize, rnd_dev.connections.items.len);
-            // TODO: notify about removing
             rnd_dev.connections.swapRemove(con_i);
+            Game.cmd_queue.enqueueWait(.{
+                .UpdateConnections = .{
+                    .device = rnd_dev,
+                },
+            });
             return;
         }
         generateConnection(rnd_dev, rnd_i);

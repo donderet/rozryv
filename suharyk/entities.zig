@@ -15,3 +15,16 @@ pub const Device = struct {
         IoTAirConditioner,
     };
 };
+
+pub const Virus = struct {
+    fast: bool,
+    modules: struct {
+        zero_day: bool,
+        stealer: bool,
+        scout: bool,
+        rat: bool,
+        worm: bool,
+        rootkit: bool,
+        obfuscator: bool,
+    },
+};

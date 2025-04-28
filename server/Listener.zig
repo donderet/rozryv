@@ -148,5 +148,5 @@ fn connectNewClient(
     defer player.deinit();
     try Game.addPlayer(&player);
     suharyk_duplex.freePacket(join_req);
-    try player.duplexLoop(&player);
+    try player.duplexLoop();
 }

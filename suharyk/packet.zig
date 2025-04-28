@@ -13,7 +13,7 @@ pub const ServerPayload = union(enum) {
         name: []u8,
     },
     GameStarted: struct {
-        device: entities.Device,
+        player_ip: u32,
     },
     UpdateConnections: struct {
         device: entities.Device,
@@ -22,4 +22,8 @@ pub const ServerPayload = union(enum) {
 
 pub const ClientPayload = union(enum) {
     Leave: void,
+    CreateVirus: struct {
+        origin_ip: u32,
+        virus: entities.Virus,
+    },
 };

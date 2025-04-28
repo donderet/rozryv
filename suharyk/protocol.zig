@@ -1,7 +1,7 @@
 const std = @import("std");
 
 pub const packet = @import("packet.zig");
-pub const net = @import("net.zig");
+const net = @import("net.zig");
 
 pub const VERSION: u8 = 0;
 
@@ -73,6 +73,7 @@ pub const Duplex = struct {
         duplex: *Duplex,
         obj: anytype,
     ) !void {
+        var writer = duplex.bw.writer();
         const obj_t = @TypeOf(obj);
         switch (@typeInfo(obj_t)) {
             .@"union" => |u| {
@@ -91,7 +92,7 @@ pub const Duplex = struct {
                         @field(obj, f.name),
                     );
             },
-            .int => try duplex.bw.writer().writeInt(
+            .int => try writer.writeInt(
                 std.math.ByteAlignedInt(@TypeOf(obj)),
                 @intCast(obj),
                 .little,
@@ -100,8 +101,8 @@ pub const Duplex = struct {
                 duplex,
                 @intFromEnum(obj),
             ),
-            .bool => try duplex.bw.writer().writeByte(@intFromBool(obj)),
-            .array => try duplex.bw.writer().writeAll(@ptrCast(&obj)),
+            .bool => try writer.writeByte(@intFromBool(obj)),
+            .array => try writer.writeAll(@ptrCast(&obj)),
             .pointer => |p| switch (p.size) {
                 .one => try send(
                     duplex,
@@ -111,7 +112,7 @@ pub const Duplex = struct {
                     try send(duplex, obj.len);
                     switch (@typeInfo(p.child)) {
                         .int => {
-                            try duplex.bw.writer().writeAll(@ptrCast(obj));
+                            try writer.writeAll(@ptrCast(obj));
                         },
                         else => {
                             for (obj) |e| {
@@ -131,7 +132,10 @@ pub const Duplex = struct {
                     o,
                 );
             },
-            else => @compileError(std.fmt.comptimePrint("Unsupported type: {any}", .{@TypeOf(obj)})),
+            else => @compileError(std.fmt.comptimePrint(
+                "Unsupported type: {any}",
+                .{@TypeOf(obj)},
+            )),
         }
         try duplex.bw.flush();
     }
@@ -143,6 +147,7 @@ pub const Duplex = struct {
         duplex: *Duplex,
         obj: anytype,
     ) !void {
+        var reader = duplex.br.reader();
         const obj_ti = @typeInfo(@TypeOf(obj));
         if (obj_ti != .pointer or obj_ti.pointer.size != .one) {
             @compileError(std.fmt.comptimePrint(
@@ -191,7 +196,7 @@ pub const Duplex = struct {
                 }
             },
             .int => {
-                obj.* = @intCast(try duplex.br.reader().readInt(deref_t, .little));
+                obj.* = @intCast(try reader.readInt(deref_t, .little));
             },
             .@"enum" => |e| {
                 const int_t = getEnumTagType(e);
@@ -201,18 +206,18 @@ pub const Duplex = struct {
                 );
                 obj.* = @enumFromInt(tag_t_int);
             },
-            .bool => obj.* = try duplex.br.readByte() == 1,
+            .bool => obj.* = try reader.readByte() == 1,
             .array => {
-                try duplex.br.readNoEof(obj);
+                try reader.readNoEof(obj);
             },
             .pointer => |p| switch (p.size) {
                 .slice => {
-                    const len = try duplex.br.reader().readInt(usize, .little);
+                    const len = try reader.readInt(usize, .little);
                     obj.* = try duplex.allocator.alloc(p.child, len);
                     errdefer duplex.allocator.free(obj.*);
                     switch (@typeInfo(p.child)) {
                         .int => {
-                            _ = try duplex.br.reader().readAll(@ptrCast(obj.*));
+                            _ = try reader.readAll(@ptrCast(obj.*));
                         },
                         else => {
                             for (0..len) |i| {
