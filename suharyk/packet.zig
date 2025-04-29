@@ -16,14 +16,28 @@ pub const ServerPayload = union(enum) {
         player_ip: u32,
     },
     UpdateConnections: struct {
-        device: entities.Device,
+        ip: u32,
+        connections: []entities.Device,
     },
+    UpdateMoney: struct {
+        new_amount: u64,
+    },
+    UpdateModuleCost: struct {
+        module_cost: [entities.Virus.module_enum_size]u16,
+    },
+    GameOver: void,
+    Victory: void,
 };
 
 pub const ClientPayload = union(enum) {
     Leave: void,
     CreateVirus: struct {
-        origin_ip: u32,
         virus: entities.Virus,
+    },
+    UpdgradeModule: struct {
+        mod: entities.Virus.Module,
+    },
+    Rozryv: struct {
+        target_ip: u32,
     },
 };

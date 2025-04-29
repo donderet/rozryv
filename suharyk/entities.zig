@@ -29,4 +29,6 @@ pub const Virus = struct {
         Rootkit,
         Obfuscator,
     };
+
+    pub const module_enum_size = @typeInfo(Virus.Module).@"enum".fields.len;
 };

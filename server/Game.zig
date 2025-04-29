@@ -6,6 +6,7 @@ const Device = entities.Device;
 const ServerPayload = suharyk.packet.ServerPayload;
 const ClientPayload = suharyk.packet.ClientPayload;
 
+const AddMoneyTickable = @import("./game/AddMoneyTickable.zig");
 const Player = @import("./game/Player.zig");
 const Tickable = @import("./game/Tickable.zig");
 const VBoard = @import("./game/VBoard.zig");
@@ -14,7 +15,7 @@ const Duplex = @import("Duplex.zig");
 
 const Game = @This();
 // Command pattern
-const ClientRequest = struct {
+pub const ClientRequest = struct {
     player: *Player,
     pl: ClientPayload,
 };
@@ -33,7 +34,7 @@ pub var players: std.ArrayListUnmanaged(*Player) = .empty;
 var game_thread: ?std.Thread = null;
 pub var name_list: std.ArrayListUnmanaged([]u8) = .empty;
 pub var cmd_queue: SyncCircularQueue.of(ClientRequest, 512) = .{};
-var vboard: VBoard = undefined;
+pub var vboard: VBoard = undefined;
 // Observer pattern
 // Command pattern
 pub var on_tick: std.ArrayListUnmanaged(Tickable) = .empty;
@@ -74,8 +75,14 @@ pub inline fn gameStarted() bool {
     return game_thread != null;
 }
 
+pub fn ipToIndex(ip: u32) ?usize {
+    return vboard.index_lut.get(ip);
+}
+
 fn start() void {
     std.log.info("Game started", .{});
+    const money_tickable = AddMoneyTickable.asTickable();
+    on_tick.append(Game.allocator, money_tickable);
     vboard.generate();
     for (players.items) |*player| {
         player.duplex.send(.{
@@ -83,19 +90,34 @@ fn start() void {
                 .device = player.device,
             },
         });
+        on_tick.append(
+            allocator,
+        );
     }
     var timer: std.time.Timer = try .start();
     while (true) {
         if (playerCount() == 0) break;
+
         while (cmd_queue.dequeue()) |cmd| {
             defer cmd.player.duplex.freePacket(cmd.pl);
-            // TODO: handle commands
-            switch (cmd.pl) {
-                .Leave => unreachable,
-                .CreateVirus => {},
-            }
+            handleRequest(cmd.pl, cmd.player);
         }
-        for (on_tick.items) |handler| handler.onTick();
+
+        for (on_tick.items, 0..) |handler, i| {
+            if (handler.isDead()) {
+                handler.deinit();
+                _ = on_tick.swapRemove(i);
+                continue;
+            }
+            handler.onTick();
+        }
+
+        if (Game.playerCount() == 1) {
+            players.items[0].server_req_queue.enqueueWait(.{
+                .Victory,
+            });
+        }
+
         const eepy_time = tick_time - timer.read();
         if (eepy_time <= 0) {
             std.log.info(
@@ -106,5 +128,20 @@ fn start() void {
             std.Thread.sleep(eepy_time);
         }
         timer.reset();
+    }
+}
+
+fn handleRequest(pl: ClientPayload, player: *Player) !void {
+    switch (pl) {
+        .Leave => unreachable,
+        .CreateVirus => |cv| {
+            player.createVirus(cv.virus);
+        },
+        .UpdgradeModule => |um| {
+            player.upgradeModule(um.mod);
+        },
+        .Rozryv => |rozryv| {
+            player.tear(rozryv.target_ip);
+        },
     }
 }

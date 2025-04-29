@@ -49,6 +49,10 @@ pub const Duplex = struct {
         };
     }
 
+    pub fn deinit(duplex: *Duplex) void {
+        duplex.br.unbuffered_reader.stream.close();
+    }
+
     /// Frees recieved packet
     pub fn freePacket(duplex: Duplex, p: anytype) void {
         const p_ti = @typeInfo(@TypeOf(p));

@@ -3,13 +3,21 @@ const std = @import("std");
 const suharyk = @import("suharyk");
 const ServerPayload = suharyk.packet.ServerPayload;
 const ClientPayload = suharyk.packet.ClientPayload;
+const Virus = suharyk.entities.Virus;
 
 const Duplex = @import("../Duplex.zig");
 const Game = @import("../Game.zig");
 const SyncCircularQueue = @import("../SyncCircularQueue.zig");
 const Device = @import("Device.zig");
+const VBoard = @import("VBoard.zig");
 
 const Player = @This();
+
+pub const DevicePermission = enum {
+    View,
+    Control,
+    PermanentControl,
+};
 
 allocator: std.mem.Allocator,
 duplex: *Duplex,
@@ -19,8 +27,32 @@ disconnect: bool = false,
 
 is_host: bool = false,
 name: []u8,
-money_amount: usize = 0,
+money_amount: u64 = 0,
 device: *Device = undefined,
+controlled_ips: std.AutoHashMapUnmanaged(u32, DevicePermission) = .empty,
+upgrades: [Virus.module_enum_size]u16 = .{0} ** Virus.module_enum_size,
+upgrade_cost: [Virus.module_enum_size]u64 = getDefaultUpgradePrices(),
+use_count_arr: [Virus.module_enum_size]usize = .{0} ** Virus.module_enum_size,
+
+pub fn getDefaultUpgradePrices() [Virus.module_enum_size]u64 {
+    var prices: [Virus.module_enum_size]u64 = undefined;
+    for (0..Virus.module_enum_size) |i| {
+        prices[i] = getModuleBaseCost(@enumFromInt(i));
+    }
+    return prices;
+}
+
+fn getModuleBaseCost(module: Virus.Module) u64 {
+    return switch (module) {
+        .Worm => 2000,
+        .ZeroDay => 1000,
+        .Rootkit => 400,
+        .Rat => 300,
+        .Scout => 100,
+        .Stealer => 100,
+        .Obfuscator => 500,
+    };
+}
 
 pub fn init(
     allocator: std.mem.Allocator,
@@ -88,6 +120,9 @@ pub fn duplexLoop(player: *Player) !void {
                 => break :loop,
                 else => return e,
             };
+            if (req == .Error or req == .GameOver or req == .Victory) {
+                player.duplex.suharyk_duplex.deinit();
+            }
         }
         var pl: suharyk.packet.ClientPayload = undefined;
         player.duplex.recieve(&pl) catch |e| switch (e) {
@@ -108,10 +143,91 @@ pub fn duplexLoop(player: *Player) !void {
             std.log.debug("Got Leave packet", .{});
             break;
         }
-        // TODO: don't forget to clean up packets after consuming them in tick
         Game.cmd_queue.enqueueWait(.{
             .player = player,
             .pl = pl,
+        });
+    }
+}
+
+pub fn addMoney(self: *Player, amount: u64) void {
+    self.money_amount += amount;
+    self.updateClientMoney();
+}
+
+pub fn removeMoney(self: *Player, amount: u64) void {
+    self.money_amount -= amount;
+    self.updateClientMoney();
+}
+
+fn updateClientMoney(self: *Player) void {
+    self.server_req_queue.enqueueWait(.{
+        .player = self,
+        .pl = .{
+            .UpdateMoney = .{
+                .newAmount = self.money_amount,
+            },
+        },
+    });
+}
+
+pub fn kickForIllegalPacket(player: *Player) void {
+    player.server_req_queue.enqueueWait(.{
+        .Error = .IllegalSuharyk,
+    });
+}
+
+pub fn createVirus(player: *Player, v: suharyk.entities.Virus) !void {
+    const virus: Virus = .init(player, v);
+    const permission = player.controlled_ips.get(v.origin_ip) orelse {
+        player.kickForIllegalPacket();
+        return;
+    };
+    if (permission == .View) {
+        player.kickForIllegalPacket();
+        return;
+    }
+    try Game.on_tick.append(Game.allocator, virus.randomTickable().asTickable());
+}
+
+pub fn upgradeModule(player: *Player, module: Virus.Module) void {
+    const i = @intFromEnum(module);
+    const max_lvl = std.math.maxInt(@typeInfo(@TypeOf(player.upgrades)).array.child);
+    if (player.upgrades[i] == max_lvl) {
+        player.kickForIllegalPacket();
+        return;
+    }
+    if (player.upgrade_cost > player.money_amount) {
+        player.kickForIllegalPacket();
+        return;
+    }
+    player.money_amount -= player.upgrade_cost;
+    player.upgrade_cost[i] = player.calcModuleUpgradeCost(module);
+    player.server_req_queue.enqueueWait(.{
+        .UpdateModuleCost = .{
+            .module_cost = player.upgrade_cost,
+        },
+    });
+    player.upgrades[i] += 1;
+    player.use_count_arr[i] = 0;
+}
+
+fn calcModuleUpgradeCost(player: *Player, module: Virus.Module) u64 {
+    const current_cost = player.upgrade_cost[@intFromEnum(module)];
+    var current_lvl = player.upgrades[@intFromEnum(module)];
+    if (current_lvl >= 64) current_lvl = 63;
+    return getModuleBaseCost(module) + current_cost / (std.math.pow(u64, 2, current_lvl)) + Game.prng.uintAtMost(u64, 200);
+}
+
+pub fn tear(player: *Player, target_ip: u32) !void {
+    if (player.controlled_ips.get(target_ip) != .View) {
+        player.kickForIllegalPacket();
+        return;
+    }
+    for (Game.players.items) |target_p| {
+        if (target_p.device.suh_entity.ip != target_ip) continue;
+        target_p.server_req_queue.enqueueWait(.{
+            .GameOver,
         });
     }
 }

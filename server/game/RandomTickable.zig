@@ -9,12 +9,15 @@ accumulated_ticks: u8 = 0,
 
 pub const tickable_vt: Tickable.VTable = .{
     .onTick = onTick,
+    .deinit = deinit,
 };
 
 pub const VTable = struct {
     /// Avarage interval between events in seconds
     interval: u16,
-    onRandomTick: *const fn (ctx: *anyopaque) void,
+    /// Execute random event and return whether to consider Tickable dead
+    onRandomTick: *const fn (ctx: *anyopaque) bool,
+    deinit: *const fn (ctx: *anyopaque) void,
 };
 
 pub fn onRandomTick(self: RandomTickable) void {
@@ -22,11 +25,18 @@ pub fn onRandomTick(self: RandomTickable) void {
 }
 
 pub fn onTick(self: RandomTickable) void {
-    self.accumulated_ticks += 1;
-    if (self.accumulated_ticks != Game.tps) return;
-    self.accumulated_ticks = 0;
-    const should_run = Game.prng.intRangeLessThan(u16, 0, self.vtable.interval) == 0;
-    if (should_run) onRandomTick(self);
+    var should_run: bool = undefined;
+    if (self.interval != 0) {
+        self.accumulated_ticks += 1;
+        if (self.accumulated_ticks != Game.tps) return;
+        self.accumulated_ticks = 0;
+        should_run = Game.prng.intRangeLessThan(u16, 0, self.vtable.interval) == 0;
+    } else {
+        should_run = true;
+    }
+    if (should_run) {
+        self.dead = onRandomTick(self);
+    }
 }
 
 // Adapter pattern
@@ -35,4 +45,8 @@ pub fn asTickable(self: *RandomTickable) Tickable {
         .ctx = self,
         .vtable = tickable_vt,
     };
+}
+
+pub fn deinit(self: *RandomTickable) !void {
+    self.vtable.deinit(self);
 }
