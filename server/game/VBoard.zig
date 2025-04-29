@@ -10,9 +10,10 @@ const Device = @import("Device.zig");
 const RandomTickable = @import("RandomTickable.zig");
 
 const VBoard = @This();
-const v_map_side = 16;
-const devices_count = v_map_side * v_map_side;
-const devices: [devices_count]Device = undefined;
+pub const v_map_side = 16;
+pub const devices_count = v_map_side * v_map_side;
+pub const devices: [devices_count]Device = undefined;
+pub const index_lut: std.AutoHashMapUnmanaged(u32, usize) = .empty;
 
 pub fn generate() void {
     const pcount = Game.playerCount();
@@ -39,10 +40,13 @@ pub fn generate() void {
         dev.suh_entity = .{
             .kind = .Player,
             .ip = getRndIp(),
-            .connection_list = .empty,
         };
-        dev.commitConnections();
         player.device = dev;
+        index_lut.put(
+            Game.allocator,
+            dev.suh_entity.ip,
+            row * v_map_side + column,
+        );
         column += 1;
         if (column == columns) {
             row += 1;
@@ -52,37 +56,42 @@ pub fn generate() void {
     for (devices) |*device| {
         device.suh_entity.ip = getRndIp();
         device.suh_entity.kind = Game.prng.enumValue(SuhDevice.Kind);
+        index_lut.put(
+            Game.allocator,
+            device.suh_entity.ip,
+            row * v_map_side + column,
+        );
     }
     for (0..devices.len) |i| generateConnections(i);
-    const rt: RandomTickable = .{ .ctx = undefined, .vtable = .{
-        .{
-            .interval = 2,
-            .onRandomTick = &randomizeConnection,
-        },
-    } };
-    Game.on_tick.append(Game.allocator, rt.asTickable());
+    // const rt: RandomTickable = .{ .ctx = undefined, .vtable = .{
+    //     .{
+    //         .interval = 2,
+    //         .onRandomTick = &randomizeConnection,
+    //     },
+    // } };
+    // Game.on_tick.append(Game.allocator, rt.asTickable());
 }
 
-fn randomizeConnection(_: *anyopaque) void {
-    while (true) {
-        const rnd_i = Game.prng.uintLessThan(usize, devices);
-        if (devices[rnd_i].suh_entity.kind == .Player)
-            continue;
-        const rnd_dev = devices[rnd_i];
-        const disconnect = Game.prng.boolean();
-        if (disconnect) {
-            const con_i = Game.prng.uintLessThan(usize, rnd_dev.connections.items.len);
-            rnd_dev.connections.swapRemove(con_i);
-            Game.cmd_queue.enqueueWait(.{
-                .UpdateConnections = .{
-                    .device = rnd_dev,
-                },
-            });
-            return;
-        }
-        generateConnection(rnd_dev, rnd_i);
-    }
-}
+// fn randomizeConnection(_: *anyopaque) void {
+//     while (true) {
+//         const rnd_i = Game.prng.uintLessThan(usize, devices);
+//         if (devices[rnd_i].suh_entity.kind == .Player)
+//             continue;
+//         const rnd_dev = devices[rnd_i];
+//         const disconnect = Game.prng.boolean();
+//         if (disconnect) {
+//             const con_i = Game.prng.uintLessThan(usize, rnd_dev.connections.items.len);
+//             rnd_dev.connections.swapRemove(con_i);
+//             Game.cmd_queue.enqueueWait(.{
+//                 .UpdateConnections = .{
+//                     .device = rnd_dev,
+//                 },
+//             });
+//             return;
+//         }
+//         generateConnection(rnd_dev, rnd_i);
+//     }
+// }
 
 fn getRndIp() u32 {
     // Class-A IP-address (1.0.0.0–126.255.255.255, excluding 10.x.x.x)
@@ -140,7 +149,7 @@ fn isValidConnection(requester: SuhDevice, recipient: SuhDevice) bool {
     };
 }
 
-fn getRndPointAround(row: usize, column: usize, range: usize) usize {
+pub fn getRndPointAround(row: usize, column: usize, range: usize) usize {
     const half_range = (range / 2);
     const rnd_row = Game.prng.intRangeAtMost(
         usize,
