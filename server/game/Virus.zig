@@ -2,6 +2,7 @@ const std = @import("std");
 
 const suharyk = @import("suharyk");
 const SuharykVirus = suharyk.entities.Virus;
+const Moudule = SuharykVirus.Module;
 
 const Game = @import("../Game.zig");
 const Device = @import("Device.zig");
@@ -23,6 +24,8 @@ modules: struct {
     rootkit: bool = false,
     obfuscator: bool = false,
 },
+detection_chance: u8,
+detection_accumulator: u4 = 0,
 target_index: usize,
 
 heap_ptr: ?*Virus = null,
@@ -34,19 +37,53 @@ pub fn init(owner: *Player, suh_virus: SuharykVirus) Virus {
         .index = Game.ipToIndex(suh_virus.origin_ip),
         .fast = suh_virus.fast,
         .origin_ip = suh_virus.origin_ip,
+        .detection_rate = 0,
         .modules = .{},
     };
     for (suh_virus.modules) |mod| {
+        owner.use_count_arr[@intFromEnum(mod)] += 1;
+        var additional_chance = owner.use_count_arr[@intFromEnum(mod)] * 5;
+        if (additional_chance >= 30) additional_chance = 30;
         switch (mod) {
-            .Stealer => v.modules.stealer = true,
-            .Worm => v.modules.worm = true,
-            .Rat => v.modules.rat = true,
-            .Obfuscator => v.modules.obfuscator = true,
-            .Scout => v.modules.scout = true,
-            .ZeroDay => v.modules.zero_day = true,
-            .Rootkit => v.modules.rootkit = true,
+            .Stealer => {
+                v.modules.stealer = true;
+                v.detection_chance +|= 20;
+            },
+            .Worm => {
+                v.modules.worm = true;
+                v.detection_chance +|= 20;
+            },
+            .Rat => {
+                v.modules.rat = true;
+                v.detection_chance +|= 30;
+            },
+            .Obfuscator => {
+                v.modules.obfuscator = true;
+            },
+            .Scout => {
+                v.modules.scout = true;
+                v.detection_chance +|= 10;
+            },
+            .ZeroDay => {
+                v.modules.zero_day = true;
+                v.detection_chance +|= 0;
+            },
+            .Rootkit => {
+                v.modules.rootkit = true;
+                v.detection_chance +|= 10;
+            },
         }
     }
+    if (suh_virus.modules.obfuscator) v.detection_chance /= @max(
+        3 - (owner.use_count_arr[@intFromEnum(Moudule.Obfuscator)] / 2),
+        1,
+    );
+    if (suh_virus.fast) {
+        v.detection_chance *|= 2;
+        v.detection_chance +|= 10;
+    }
+    if (v.detection_chance > 90) v.detection_chance = 90;
+    if (v.detection_chance < 5) v.detection_chance = 5;
     return v;
 }
 
@@ -75,9 +112,13 @@ pub fn deinit(self: Virus) void {
 }
 
 fn onRandomTick(self: *Virus) bool {
+    if (self.detection_accumulator == 10) return true;
+    if (Game.prng.uintAtMost(u8, 100) <= self.detection_chance) {
+        self.detection_accumulator += 1;
+    }
     const dev: *Device = Game.vboard.devices[self.target_index];
     const ip = self.getNotInfectedIp(self.target_index) catch {
-        return;
+        return true;
     };
     var should_update_cons = false;
     if (self.modules.rat) {
@@ -87,7 +128,13 @@ fn onRandomTick(self: *Virus) bool {
         should_update_cons = true;
     }
     if (self.modules.stealer) {
-        self.owner.addMoney(10);
+        const rnd_ceil = switch (Game.vboard.devices[Game.ipToIndex(ip).?]) {
+            .Server => 1000,
+            .Player => 100,
+            else => 50,
+        };
+        const addend_amount = Game.prng.uintAtMost(u64, rnd_ceil);
+        self.owner.addMoney(addend_amount * (self.owner.upgrades[@intFromEnum(Moudule.Stealer)] + 1));
     }
     if (self.modules.worm) blk: {
         const next_ip = self.getNotInfectedIp(self.index) catch break :blk;
@@ -114,6 +161,7 @@ fn onRandomTick(self: *Virus) bool {
             },
         });
     }
+    return false;
 }
 
 fn getNotInfectedIp(self: Virus, infected_i: usize) error{NoIpAvailable}!u32 {

@@ -27,7 +27,7 @@ disconnect: bool = false,
 
 is_host: bool = false,
 name: []u8,
-money_amount: u64 = 0,
+money_amount: u64 = 300,
 device: *Device = undefined,
 controlled_ips: std.AutoHashMapUnmanaged(u32, DevicePermission) = .empty,
 upgrades: [Virus.module_enum_size]u16 = .{0} ** Virus.module_enum_size,
@@ -44,13 +44,13 @@ pub fn getDefaultUpgradePrices() [Virus.module_enum_size]u64 {
 
 fn getModuleBaseCost(module: Virus.Module) u64 {
     return switch (module) {
-        .Worm => 2000,
-        .ZeroDay => 1000,
-        .Rootkit => 400,
+        .Worm => 900,
+        .ZeroDay => 3000,
+        .Rootkit => 600,
         .Rat => 300,
         .Scout => 100,
         .Stealer => 100,
-        .Obfuscator => 500,
+        .Obfuscator => 1000,
     };
 }
 
@@ -179,13 +179,15 @@ pub fn kickForIllegalPacket(player: *Player) void {
 
 pub fn createVirus(player: *Player, v: suharyk.entities.Virus) !void {
     const virus: Virus = .init(player, v);
-    const permission = player.controlled_ips.get(v.origin_ip) orelse {
-        player.kickForIllegalPacket();
-        return;
-    };
-    if (permission == .View) {
-        player.kickForIllegalPacket();
-        return;
+    if (v.origin_ip != player.device.suh_entity.ip) {
+        const permission = player.controlled_ips.get(v.origin_ip) orelse {
+            player.kickForIllegalPacket();
+            return;
+        };
+        if (permission == .View) {
+            player.kickForIllegalPacket();
+            return;
+        }
     }
     try Game.on_tick.append(Game.allocator, virus.randomTickable().asTickable());
 }
