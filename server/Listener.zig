@@ -125,7 +125,13 @@ fn connectNewClient(
     var duplex = Duplex.init(suharyk_duplex);
 
     var join_req: suharyk.client_hello = undefined;
-    try suharyk_duplex.recieve(&join_req);
+    suharyk_duplex.recieve(&join_req) catch {
+        std.log.debug(
+            "Client closed connection without join request",
+            .{},
+        );
+        return;
+    };
     const accept_join = !Game.gameStarted() and join_req.prot_ver == suharyk.VERSION;
     const resp: suharyk.server_hello = .{
         .ok = accept_join,
