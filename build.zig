@@ -1,13 +1,27 @@
 const std = @import("std");
+const raylib = @import("raylib");
 
 pub fn build(b: *std.Build) void {
-    const server_exe_name = "rozryv-server";
-    const server_options = b.addOptions();
-    server_options.addOption([]const u8, "exe_name", server_exe_name);
-
     const target = b.standardTargetOptions(.{});
 
     const optimize = b.standardOptimizeOption(.{});
+
+    const lb: raylib.LinuxDisplayBackend = if (optimize == .Debug) .Wayland else .Both;
+    const raylib_dep = b.dependency("raylib", .{
+        .target = target,
+        .optimize = optimize,
+        .linux_display_backend = lb,
+    });
+    const raygui_dep = b.dependency("raygui", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    const raylib_artifact = raylib_dep.artifact("raylib");
+    raylib.addRaygui(b, raylib_artifact, raygui_dep);
+
+    const server_exe_name = "rozryv-server";
+    const server_options = b.addOptions();
+    server_options.addOption([]const u8, "exe_name", server_exe_name);
 
     const suharyk_mod = b.addModule("suharyk", .{
         .root_source_file = b.path("suharyk/protocol.zig"),
@@ -29,7 +43,9 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("game/main.zig"),
         .target = target,
         .optimize = optimize,
+        .use_lld = false,
     });
+    game_exe.linkLibrary(raylib_dep.artifact("raylib"));
     game_exe.root_module.addImport("suharyk", suharyk_mod);
     game_exe.root_module.addOptions("server", server_options);
 
