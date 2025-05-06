@@ -1,5 +1,8 @@
 const std = @import("std");
 const raylib = @import("raylib");
+pub const std_options: std.Options = .{
+    .log_level = .debug,
+};
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
@@ -19,7 +22,13 @@ pub fn build(b: *std.Build) void {
     const raylib_artifact = raylib_dep.artifact("raylib");
     raylib.addRaygui(b, raylib_artifact, raygui_dep);
 
-    const server_exe_name = "rozryv-server";
+    var server_exe_name_buf: [24]u8 = undefined;
+    const server_exe_name = std.fmt.bufPrint(
+        &server_exe_name_buf,
+        "rozryv-server{s}",
+        .{target.result.os.tag.exeFileExt(.x86_64)},
+    ) catch @panic("OOM");
+
     const server_options = b.addOptions();
     server_options.addOption([]const u8, "exe_name", server_exe_name);
 
@@ -38,6 +47,14 @@ pub fn build(b: *std.Build) void {
     server_exe.root_module.addImport("suharyk", suharyk_mod);
     b.installArtifact(server_exe);
 
+    var assets_copy = b.addInstallDirectory(
+        .{
+            .source_dir = b.path("assets/"),
+            .install_dir = .bin,
+            .install_subdir = "assets",
+        },
+    );
+
     const game_exe = b.addExecutable(.{
         .name = "rozryv",
         .root_source_file = b.path("game/main.zig"),
@@ -49,6 +66,7 @@ pub fn build(b: *std.Build) void {
     game_exe.linkLibrary(raylib_dep.artifact("raylib"));
     game_exe.root_module.addImport("suharyk", suharyk_mod);
     game_exe.root_module.addOptions("server", server_options);
+    game_exe.step.dependOn(&assets_copy.step);
 
     b.installArtifact(game_exe);
 
@@ -56,6 +74,10 @@ pub fn build(b: *std.Build) void {
         const run_cmd = b.addRunArtifact(game_exe);
 
         run_cmd.step.dependOn(b.getInstallStep());
+
+        run_cmd.setCwd(.{
+            .cwd_relative = b.exe_dir,
+        });
 
         if (b.args) |args| {
             run_cmd.addArgs(args);
