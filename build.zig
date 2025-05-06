@@ -45,6 +45,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .use_lld = false,
     });
+    game_exe.root_module.addOptions("server_options", server_options);
     game_exe.linkLibrary(raylib_dep.artifact("raylib"));
     game_exe.root_module.addImport("suharyk", suharyk_mod);
     game_exe.root_module.addOptions("server", server_options);
