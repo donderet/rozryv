@@ -1,12 +1,13 @@
 const std = @import("std");
 
 pub const packet = @import("packet.zig");
-const net = @import("net.zig");
+pub const net = @import("net.zig");
+pub const SyncCircularQueue = @import("SyncCircularQueue.zig");
 
-pub const VERSION: u8 = 0;
+pub const version: u8 = 0;
 
 pub const client_hello = struct {
-    prot_ver: @TypeOf(VERSION),
+    prot_ver: @TypeOf(version),
     name: []u8,
 };
 
@@ -37,14 +38,14 @@ pub const Duplex = struct {
     br: Reader,
 
     pub fn init(
-        connection: std.net.Server.Connection,
+        stream: std.net.Stream,
         allocator: std.mem.Allocator,
     ) Duplex {
         return .{
             .allocator = allocator,
-            .bw = std.io.bufferedWriter(connection.stream.writer()),
+            .bw = std.io.bufferedWriter(stream.writer()),
             .br = std.io.bufferedReader(net.NetStreamReader{
-                .stream = connection.stream,
+                .stream = stream,
             }),
         };
     }
@@ -86,8 +87,13 @@ pub const Duplex = struct {
                         "Union {s} isn't tagged.",
                         .{@typeName(obj_t)},
                     ));
+                const active_tag = std.meta.activeTag(obj);
                 try duplex.send(@intFromEnum(obj));
-                try duplex.send(@as(tag_type, obj));
+                inline for (std.meta.fields(obj_t)) |f| {
+                    if (@field(tag_type, f.name) == active_tag) {
+                        try duplex.send(@as(f.type, @field(obj, f.name)));
+                    }
+                }
             },
             .@"struct" => |s| {
                 inline for (s.fields) |f|
@@ -114,15 +120,8 @@ pub const Duplex = struct {
                 ),
                 .slice => {
                     try send(duplex, obj.len);
-                    switch (@typeInfo(p.child)) {
-                        .int => {
-                            try writer.writeAll(@ptrCast(obj));
-                        },
-                        else => {
-                            for (obj) |e| {
-                                try send(duplex, e);
-                            }
-                        },
+                    for (obj) |e| {
+                        try send(duplex, e);
                     }
                 },
                 else => @compileError(std.fmt.comptimePrint(
@@ -130,17 +129,25 @@ pub const Duplex = struct {
                     .{@TypeOf(obj)},
                 )),
             },
-            .optional => if (obj) |o| {
-                try send(
-                    duplex,
-                    o,
-                );
+            .optional => {
+                try duplex.send(obj != null);
+                if (obj) |o| {
+                    try send(
+                        duplex,
+                        o,
+                    );
+                }
             },
+            .void => {},
             else => @compileError(std.fmt.comptimePrint(
                 "Unsupported type: {any}",
                 .{@TypeOf(obj)},
             )),
         }
+        std.log.debug(
+            "Sending type {any} buf : {d}",
+            .{ obj_t, duplex.bw.buf[0..duplex.bw.end] },
+        );
         try duplex.bw.flush();
     }
 
@@ -208,11 +215,14 @@ pub const Duplex = struct {
                 try duplex.recieve(
                     @as(*int_t, &tag_t_int),
                 );
+                std.log.debug("Recieved tag {d} for type {any}", .{ tag_t_int, int_t });
                 obj.* = @enumFromInt(tag_t_int);
             },
             .bool => obj.* = try reader.readByte() == 1,
             .array => {
-                try reader.readNoEof(obj);
+                for (obj) |*it| {
+                    try duplex.recieve(it);
+                }
             },
             .pointer => |p| switch (p.size) {
                 .slice => {
@@ -236,6 +246,17 @@ pub const Duplex = struct {
                     .{@TypeOf(obj)},
                 )),
             },
+            .optional => |opt| {
+                var not_null: bool = undefined;
+                try duplex.recieve(&not_null);
+                if (not_null) {
+                    var contents: opt.child = undefined;
+                    try duplex.recieve(&contents);
+                    obj.* = contents;
+                } else {
+                    obj.* = null;
+                }
+            },
             .void => {},
             else => @compileError(std.fmt.comptimePrint(
                 "Unimplemented type: {}",
@@ -250,7 +271,7 @@ fn getEnumTagType(e: std.builtin.Type.Enum) type {
     if (e.is_exhaustive) {
         int_t = std.math.ByteAlignedInt(std.meta.Int(
             .unsigned,
-            e.fields.len,
+            std.math.log2_int_ceil(u16, e.fields.len),
         ));
     } else {
         int_t = std.math.ByteAlignedInt(e.tag_type);
