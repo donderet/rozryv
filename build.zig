@@ -66,6 +66,7 @@ pub fn build(b: *std.Build) void {
     game_exe.linkLibrary(raylib_dep.artifact("raylib"));
     game_exe.root_module.addImport("suharyk", suharyk_mod);
     game_exe.root_module.addOptions("server", server_options);
+    game_exe.step.dependOn(&server_exe.step);
     game_exe.step.dependOn(&assets_copy.step);
 
     b.installArtifact(game_exe);
