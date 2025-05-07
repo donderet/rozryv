@@ -1,6 +1,6 @@
 .{
     .name = .rozryv,
-    .fingerprint = 0xf826078583e80adc,
+    .fingerprint = 0xf8260785253c524e,
     .version = "0.1.0",
     .minimum_zig_version = "0.14.0",
     .dependencies = .{
