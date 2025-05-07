@@ -31,7 +31,7 @@ pub fn start(
 
     while (true) {
         const con = try server.accept();
-        setKeepalive(con.stream.handle) catch |e| {
+        suharyk.net.setKeepalive(con.stream.handle) catch |e| {
             std.log.debug("Can't set keepalive: {any}", .{e});
             std.log.debug("{any}", .{@errorReturnTrace()});
             continue;
@@ -54,72 +54,12 @@ pub fn start(
     }
 }
 
-fn setKeepalive(handle: std.posix.socket_t) !void {
-    try std.posix.setsockopt(
-        handle,
-        std.posix.SOL.SOCKET,
-        std.posix.SO.KEEPALIVE,
-        &std.mem.toBytes(@as(c_int, 1)),
-    );
-    const idle_sec = 5;
-    const intvl_sec = 1;
-    if (@import("builtin").os.tag == .windows) {
-        var keepalive_vals: std.os.windows.mst = extern struct {
-            onoff: u32 = 1,
-            keepalivetime: u32 = idle_sec * 1000,
-            keepaliveinterval: u32 = intvl_sec * 1000,
-        };
-
-        const SIO_KEEPALIVE_VALS: u32 = 2550136836;
-
-        const bytes_returned: std.os.windows.DWORD = undefined;
-        const result = std.os.windows.WSAIoctl(
-            handle,
-            SIO_KEEPALIVE_VALS,
-            @ptrCast(&keepalive_vals),
-            @sizeOf(keepalive_vals),
-            null,
-            0,
-            &bytes_returned,
-            null,
-            null,
-        );
-        if (result != 0) {
-            const e = std.os.windows.ws2_32.WSAGetLastError();
-            std.log.err(
-                "Failed to set keepalive options with error {d}",
-                .{e},
-            );
-            return error.WSAIoctlErr;
-        }
-    } else {
-        try std.posix.setsockopt(
-            handle,
-            std.posix.IPPROTO.TCP,
-            std.posix.TCP.KEEPIDLE,
-            &std.mem.toBytes(@as(c_int, idle_sec)),
-        );
-        try std.posix.setsockopt(
-            handle,
-            std.posix.IPPROTO.TCP,
-            std.posix.TCP.KEEPINTVL,
-            &std.mem.toBytes(@as(c_int, intvl_sec)),
-        );
-        try std.posix.setsockopt(
-            handle,
-            std.posix.IPPROTO.TCP,
-            std.posix.TCP.KEEPCNT,
-            &std.mem.toBytes(@as(c_int, 3)),
-        );
-    }
-}
-
 fn connectNewClient(
     connection: std.net.Server.Connection,
     a: std.mem.Allocator,
 ) !void {
     var suharyk_duplex = suharyk.Duplex.init(
-        connection,
+        connection.stream,
         a,
     );
     var duplex = Duplex.init(suharyk_duplex);
@@ -132,7 +72,7 @@ fn connectNewClient(
         );
         return;
     };
-    const accept_join = !Game.gameStarted() and join_req.prot_ver == suharyk.VERSION;
+    const accept_join = !Game.gameStarted() and join_req.prot_ver == suharyk.version;
     const resp: suharyk.server_hello = .{
         .ok = accept_join,
         .members = if (accept_join) Game.name_list.items else null,

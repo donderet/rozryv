@@ -2,6 +2,7 @@ const std = @import("std");
 const Tickable = @This();
 
 ctx: *anyopaque,
+// Strategy pattern
 vtable: *const VTable,
 
 pub const VTable = struct {

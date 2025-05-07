@@ -7,7 +7,7 @@ const Virus = suharyk.entities.Virus;
 
 const Duplex = @import("../Duplex.zig");
 const Game = @import("../Game.zig");
-const SyncCircularQueue = @import("../SyncCircularQueue.zig");
+const SyncCircularQueue = suharyk.SyncCircularQueue;
 const Device = @import("Device.zig");
 const VBoard = @import("VBoard.zig");
 
@@ -23,7 +23,6 @@ allocator: std.mem.Allocator,
 duplex: *Duplex,
 server_req_queue: SyncCircularQueue.of(ServerPayload, 128) = .{},
 id: usize,
-disconnect: bool = false,
 
 is_host: bool = false,
 name: []u8,
@@ -112,7 +111,7 @@ pub fn duplexLoop(player: *Player) !void {
             .{player.name},
         );
     }
-    loop: while (!player.disconnect) {
+    loop: while (true) {
         while (player.server_req_queue.dequeue()) |req| {
             player.duplex.send(req) catch |e| switch (e) {
                 error.ConnectionResetByPeer,

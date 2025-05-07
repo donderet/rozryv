@@ -10,7 +10,7 @@ const AddMoneyTickable = @import("./game/AddMoneyTickable.zig");
 const Player = @import("./game/Player.zig");
 const Tickable = @import("./game/Tickable.zig");
 const VBoard = @import("./game/VBoard.zig");
-const SyncCircularQueue = @import("./SyncCircularQueue.zig");
+const SyncCircularQueue = suharyk.SyncCircularQueue;
 const Duplex = @import("Duplex.zig");
 
 const Game = @This();
