@@ -22,6 +22,7 @@ pub const NetStreamReader = struct {
 
     pub fn close(self: Self) void {
         if (self.closed) return;
+        self.closed = true;
         self.stream.close();
     }
 };
