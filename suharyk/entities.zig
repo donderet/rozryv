@@ -10,8 +10,6 @@ pub const Device = struct {
         Player,
         IoTBulBul,
         IoTCamera,
-        IoTBoiler,
-        IoTAirConditioner,
     };
 };
 
