@@ -13,7 +13,7 @@ pub inline fn indexOfForwards(str: []u8, char: u8) usize {
     for (0..str.len) |i| {
         if (str[i] == char) return i;
     }
-    return 0;
+    return str.len;
 }
 
 pub inline fn len(str: []u8) usize {
