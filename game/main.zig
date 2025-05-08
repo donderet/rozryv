@@ -5,8 +5,10 @@ const window = @import("window.zig");
 const rl = window.rl;
 
 pub fn main() !void {
-    game.state = try @import("MenuState.zig").state_vt.init();
-    rl.SetConfigFlags(rl.FLAG_WINDOW_RESIZABLE);
+    try game.init();
+    if (@import("builtin").mode != .Debug) {
+        rl.SetConfigFlags(rl.FLAG_WINDOW_RESIZABLE);
+    }
     rl.SetTraceLogLevel(rl.LOG_WARNING);
     rl.SetExitKey(0);
     rl.InitWindow(800, 800, "C.Y.B.E.R. R.O.Z.R.Y.V.");
@@ -18,8 +20,6 @@ pub fn main() !void {
         rl.BeginDrawing();
         window.onBeginDrawing();
         defer rl.EndDrawing();
-        game.state.draw();
+        game.getState().draw();
     }
 }
-
-fn menu() void {}
