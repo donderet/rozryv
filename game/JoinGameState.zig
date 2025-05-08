@@ -13,8 +13,8 @@ const JoinGameState = @This();
 name_input_active: bool = true,
 ip_input_active: bool = false,
 ip_input_invalid: bool = false,
-name_buf: [16]u8 = @splat(0),
-ip_buf: [256]u8 = @splat(0),
+name_buf: [15:0]u8 = @splat(0),
+address_buf: [255:0]u8 = @splat(0),
 
 pub const state_vt: GameState.VTable = .{
     .draw = draw,
@@ -95,8 +95,8 @@ pub fn draw(ctx: *anyopaque) void {
     }
     const pressed_enter = rl.GuiTextBox(
         obj_rect,
-        &self.ip_buf,
-        self.ip_buf.len,
+        &self.address_buf,
+        self.address_buf.len,
         self.ip_input_active,
     ) == 1;
     if (self.ip_input_invalid) {
@@ -112,7 +112,11 @@ pub fn draw(ctx: *anyopaque) void {
 }
 
 pub fn init() std.mem.Allocator.Error!GameState {
-    return GameState.init(JoinGameState);
+    const ptr = try GameState.init(JoinGameState);
+    const state: *JoinGameState = @ptrCast(@alignCast(ptr.ctx));
+    state.name_buf = game.settings.player_name_buf;
+    state.address_buf = game.settings.last_address_buf;
+    return ptr;
 }
 
 pub fn deinit(ctx: *anyopaque) void {
@@ -125,15 +129,16 @@ pub fn tryJoin(self: *JoinGameState) void {
         self.ip_input_active = false;
         return;
     }
-    if (self.ip_buf[0] == 0) {
+    if (self.address_buf[0] == 0) {
         self.name_input_active = false;
         self.ip_input_active = true;
         return;
     }
     const name = self.name_buf[0..string.len(&self.name_buf)];
-    game.setPlayerName(name);
-    const ip_buf_len = string.len(&self.ip_buf);
-    const input = self.ip_buf[0..ip_buf_len];
+    game.settings.setPlayerName(name);
+    const ip_buf_len = string.len(&self.address_buf);
+    const input = self.address_buf[0..ip_buf_len];
+    game.settings.setLastAddress(input);
     const port_i = string.indexOfBackwards(input, ':');
     if (port_i != 0) blk: {
         if (port_i == input.len - 1) break :blk;

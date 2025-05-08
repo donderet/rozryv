@@ -6,7 +6,7 @@ const ServerPayload = suharyk.packet.ServerPayload;
 const ClientPayload = suharyk.packet.ClientPayload;
 const SyncCircularQueue = suharyk.SyncCircularQueue;
 const Duplex = @import("Duplex.zig");
-
+const Settings = @import("Settings.zig");
 var gpa: std.heap.DebugAllocator(.{}) = .init;
 pub const allocator = gpa.allocator();
 // State pattern
@@ -14,23 +14,12 @@ var state: GameState = @import("MenuGameState.zig").init();
 var serv_proc: ?std.process.Child = null;
 pub var duplex: Duplex = undefined;
 
-var player_name_buf: [15:0]u8 = undefined;
-var player_name: [:0]u8 = &player_name_buf;
 pub var spl_queue: SyncCircularQueue.of(ServerPayload, 64) = .{};
 pub var cpl_queue: SyncCircularQueue.of(ClientPayload, 64) = .{};
+
+pub var settings: Settings = .{};
 pub var is_host = false;
-
 var money_amount = 0;
-
-pub fn setPlayerName(new_name: []const u8) void {
-    // TODO save player name to ini
-    std.mem.copyForwards(u8, &player_name_buf, new_name);
-    player_name.len = new_name.len;
-}
-
-pub fn getPlayerName() [:0]u8 {
-    return player_name;
-}
 
 pub fn getState() GameState {
     return state;
@@ -84,7 +73,7 @@ pub fn join(addr: std.net.Address) !void {
     errdefer stream.close();
     var raw_duplex: suharyk.Duplex = .init(stream, allocator);
     const hello: suharyk.client_hello = .{
-        .name = player_name,
+        .name = settings.player_name,
         .prot_ver = suharyk.version,
     };
     try raw_duplex.send(hello);

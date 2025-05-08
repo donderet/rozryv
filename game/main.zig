@@ -6,6 +6,9 @@ const rl = window.rl;
 
 pub fn main() !void {
     try game.init();
+    game.settings.restore() catch |e| {
+        std.log.debug("Cannot restore settings: {any}", .{e});
+    };
     if (@import("builtin").mode != .Debug) {
         rl.SetConfigFlags(rl.FLAG_WINDOW_RESIZABLE);
     }

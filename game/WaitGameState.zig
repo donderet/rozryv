@@ -148,7 +148,7 @@ fn onDraw(self: *WaitGameState) !void {
 pub fn init() std.mem.Allocator.Error!GameState {
     const ptr = try GameState.init(WaitGameState);
     const state: *WaitGameState = @ptrCast(@alignCast(ptr.ctx));
-    try state.player_list.append(game.allocator, game.getPlayerName());
+    try state.player_list.append(game.allocator, &game.settings.player_name_buf);
     return ptr;
 }
 

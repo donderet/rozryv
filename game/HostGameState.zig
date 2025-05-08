@@ -9,7 +9,7 @@ const game = @import("game.zig");
 
 const HostGameState = @This();
 
-name_buf: [16]u8 = @splat(0),
+name_buf: [15:0]u8 = @splat(0),
 
 pub const state_vt: GameState.VTable = .{
     .draw = draw,
@@ -69,7 +69,10 @@ pub fn draw(ctx: *anyopaque) void {
 }
 
 pub fn init() std.mem.Allocator.Error!GameState {
-    return GameState.init(HostGameState);
+    const ptr = try GameState.init(HostGameState);
+    const state: *HostGameState = @ptrCast(@alignCast(ptr.ctx));
+    state.name_buf = game.settings.player_name_buf;
+    return ptr;
 }
 
 pub fn deinit(ctx: *anyopaque) void {
@@ -79,7 +82,7 @@ pub fn deinit(ctx: *anyopaque) void {
 pub fn tryHost(self: *HostGameState) void {
     if (self.name_buf[0] == 0) return;
     const name = self.name_buf[0..string.len(&self.name_buf)];
-    game.setPlayerName(name);
+    game.settings.setPlayerName(name);
     game.startServer() catch |e| {
         std.log.debug("Failed to start server: {any}", .{e});
         return;
