@@ -4,20 +4,40 @@ const std = @import("std");
 /// Detects closed connection by peer
 pub const NetStreamReader = struct {
     stream: std.net.Stream,
+    closed: bool = false,
 
     const Self = @This();
     pub const Error = std.net.Stream.ReadError || error{NoUpdates};
 
     pub inline fn read(self: *Self, buf: []u8) Error!usize {
-        const bytes_read = try self.stream.read(buf);
+        const bytes_read = self.stream.read(buf) catch |e| switch (e) {
+            error.WouldBlock => return Error.NoUpdates,
+            else => return e,
+        };
         if (bytes_read == 0) {
             return Error.NoUpdates;
         }
         return bytes_read;
     }
+
+    pub fn close(self: Self) void {
+        if (self.closed) return;
+        self.stream.close();
+    }
 };
 
 pub fn setKeepalive(handle: std.posix.socket_t) !void {
+    const timeout = std.posix.timeval{
+        .sec = 3,
+        .usec = 0,
+    };
+    try std.posix.setsockopt(
+        handle,
+        std.posix.SOL.SOCKET,
+        std.posix.SO.RCVTIMEO,
+        std.mem.asBytes(&timeout),
+    );
+
     try std.posix.setsockopt(
         handle,
         std.posix.SOL.SOCKET,

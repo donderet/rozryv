@@ -28,13 +28,13 @@ pub const tps = 20;
 const tick_time = std.time.ns_per_s / tps;
 
 const seed: u64 = undefined;
-pub var prng = std.Random.Pcg.init(seed).random();
+var pcg = std.Random.Pcg.init(seed);
+pub var prng = pcg.random();
 
 pub var players: std.ArrayListUnmanaged(*Player) = .empty;
-var game_thread: ?std.Thread = null;
+var game_started = false;
 pub var name_list: std.ArrayListUnmanaged([]u8) = .empty;
 pub var cmd_queue: SyncCircularQueue.of(ClientRequest, 512) = .{};
-pub var vboard: VBoard = undefined;
 // Observer pattern
 // Command pattern
 pub var on_tick: std.ArrayListUnmanaged(Tickable) = .empty;
@@ -58,11 +58,7 @@ pub fn addPlayer(player: *Player) !void {
 pub fn broadcast(player_id: usize, info: anytype) void {
     for (players.items) |player| {
         if (player.id != player_id) {
-            player.duplex.send(info) catch |e| {
-                // Possibly, connection is closed from other thread or it was half-closed
-                std.log.debug("Failed to broadcast: {any}", .{e});
-                // std.log.debug("{any}", .{@errorReturnTrace()});
-            };
+            player.server_req_queue.enqueueWait(info);
         }
     }
 }
@@ -72,39 +68,57 @@ pub inline fn playerCount() usize {
 }
 
 pub inline fn gameStarted() bool {
-    return game_thread != null;
+    return game_started;
 }
 
 pub fn ipToIndex(ip: u32) ?usize {
-    return vboard.index_lut.get(ip);
+    return VBoard.index_lut.get(ip);
 }
 
-fn start() void {
+pub fn disconnectEveryone() void {
+    for (players.items) |player| {
+        player.duplex.suharyk_duplex.deinit();
+    }
+}
+
+pub fn start() void {
     std.log.info("Game started", .{});
-    const money_tickable = AddMoneyTickable.asTickable();
-    on_tick.append(Game.allocator, money_tickable);
-    vboard.generate();
-    for (players.items) |*player| {
-        player.duplex.send(.{
+    game_started = true;
+    var money_rtkbl: AddMoneyTickable = .{};
+    const money_tickable = money_rtkbl.asTickable();
+    on_tick.append(Game.allocator, money_tickable) catch |e| {
+        std.log.debug("Can't append: {any}", .{e});
+        disconnectEveryone();
+        return;
+    };
+    VBoard.generate() catch |e| {
+        std.log.debug("Can't generate vboard: {any}", .{e});
+        disconnectEveryone();
+        return;
+    };
+    for (players.items) |player| {
+        player.server_req_queue.enqueueWait(.{
             .GameStarted = .{
-                .device = player.device,
+                .player_ip = player.device.suh_entity.ip,
             },
         });
-        on_tick.append(
-            allocator,
-        );
     }
-    var timer: std.time.Timer = try .start();
-    while (true) {
+    var timer = std.time.Timer.start() catch {
+        @panic("Timer is not supported");
+    };
+    game_loop: while (true) {
         if (playerCount() == 0) break;
 
         while (cmd_queue.dequeue()) |cmd| {
             defer cmd.player.duplex.freePacket(cmd.pl);
-            handleRequest(cmd.pl, cmd.player);
+            handleRequest(cmd.pl, cmd.player) catch |e| {
+                std.log.debug("Error while handling request: {any}", .{e});
+                break :game_loop;
+            };
         }
 
-        for (on_tick.items, 0..) |handler, i| {
-            if (handler.isDead()) {
+        for (on_tick.items, 0..) |*handler, i| {
+            if (handler.dead) {
                 handler.deinit();
                 _ = on_tick.swapRemove(i);
                 continue;
@@ -114,7 +128,7 @@ fn start() void {
 
         if (Game.playerCount() == 1) {
             players.items[0].server_req_queue.enqueueWait(.{
-                .Victory,
+                .Victory = {},
             });
         }
 
@@ -134,14 +148,17 @@ fn start() void {
 fn handleRequest(pl: ClientPayload, player: *Player) !void {
     switch (pl) {
         .Leave => unreachable,
+        .StartGame => {
+            // Race condition, do nothing, just wait for the client to update itself
+        },
         .CreateVirus => |cv| {
-            player.createVirus(cv.virus);
+            try player.createVirus(cv.virus);
         },
         .UpdgradeModule => |um| {
             player.upgradeModule(um.mod);
         },
         .Rozryv => |rozryv| {
-            player.tear(rozryv.target_ip);
+            try player.tear(rozryv.target_ip);
         },
     }
 }

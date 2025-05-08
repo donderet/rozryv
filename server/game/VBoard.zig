@@ -12,13 +12,13 @@ const RandomTickable = @import("RandomTickable.zig");
 const VBoard = @This();
 pub const v_map_side = 16;
 pub const devices_count = v_map_side * v_map_side;
-pub const devices: [devices_count]Device = undefined;
-pub const index_lut: std.AutoHashMapUnmanaged(u32, usize) = .empty;
+pub var devices: [devices_count]Device = undefined;
+pub var index_lut: std.AutoHashMapUnmanaged(u32, usize) = .empty;
 
-pub fn generate() void {
+pub fn generate() !void {
     const pcount = Game.playerCount();
 
-    const rows = @floor(std.math.sqrt(pcount));
+    const rows = std.math.sqrt(pcount);
     const columns = rows;
 
     const row_spacing = v_map_side / rows;
@@ -27,7 +27,7 @@ pub fn generate() void {
     var row: usize = 0;
     var column: usize = 0;
 
-    for (Game.getPlayers().items) |player| {
+    for (Game.players.items) |player| {
         var row_margin = row_spacing;
         var column_margin = column_spacing;
         if (row == 0) {
@@ -42,7 +42,7 @@ pub fn generate() void {
             .ip = getRndIp(),
         };
         player.device = dev;
-        index_lut.put(
+        try index_lut.put(
             Game.allocator,
             dev.suh_entity.ip,
             row * v_map_side + column,
@@ -53,10 +53,10 @@ pub fn generate() void {
             column = 0;
         }
     }
-    for (devices) |*device| {
+    for (&devices) |*device| {
         device.suh_entity.ip = getRndIp();
         device.suh_entity.kind = Game.prng.enumValue(SuhDevice.Kind);
-        index_lut.put(
+        try index_lut.put(
             Game.allocator,
             device.suh_entity.ip,
             row * v_map_side + column,
@@ -95,7 +95,9 @@ pub fn generate() void {
 
 fn getRndIp() u32 {
     // Class-A IP-address (1.0.0.0–126.255.255.255, excluding 10.x.x.x)
-    const rnd_ip: union { int: u32, octets: [4]u8 } = Game.prng.int(u32) & 0x7f_ff_ff_ff;
+    var rnd_ip: extern union { int: u32, octets: [4]u8 } = .{
+        .int = Game.prng.int(u32) & 0x7f_ff_ff_ff,
+    };
     const first_octet = rnd_ip.octets[0];
     if (first_octet == 127 or first_octet == 10 or first_octet == 0) {
         @branchHint(.cold);
@@ -108,32 +110,33 @@ fn generateConnections(i: usize) void {
     const device = devices[i];
     if (device.suh_entity.kind == .Player) return;
     const max_connections = getMaxConnections(device.suh_entity.kind);
-    defer device.commitConnections();
     for (0..max_connections) |_| {
         generateConnection(i);
     }
 }
 
 fn generateConnection(i: usize) void {
-    for (0..16) |_| {
+    search_loop: for (0..16) |_| {
         const rnd_point = getRndPointAround(i / v_map_side, i % v_map_side, 4);
 
         if (isValidConnection(
             devices[i].suh_entity,
             devices[rnd_point].suh_entity,
-        ) and !std.mem.containsAtLeast(
-            *Device,
-            devices[i].connections.items,
-            1,
-            devices[rnd_point],
         )) {
-            devices[i].connections.append(allocator, devices[rnd_point].suh_entity);
-            break;
+            for (devices[i].connections.items) |*dev| {
+                if (dev.ip == devices[rnd_point].suh_entity.ip) {
+                    continue :search_loop;
+                }
+            }
+            devices[i].connections.append(allocator, devices[rnd_point].suh_entity) catch |e| {
+                std.log.debug("Failed to generate connection: {any}", .{e});
+            };
+            return;
         }
     }
     std.log.debug(
         "Couldn't generate connection for ({d}, {d})",
-        .{ i / v_map_side, i % v_map_side, 4 },
+        .{ i / v_map_side, i % v_map_side },
     );
 }
 
@@ -161,7 +164,9 @@ pub fn getRndPointAround(row: usize, column: usize, range: usize) usize {
         column -| half_range,
         @max(v_map_side, column + half_range),
     );
-    return rnd_row * v_map_side + rnd_column;
+    var res = rnd_row * v_map_side + rnd_column;
+    if (res >= devices.len) res = devices.len - 1;
+    return res;
 }
 
 fn getMaxConnections(kind: SuhDevice.Kind) u8 {

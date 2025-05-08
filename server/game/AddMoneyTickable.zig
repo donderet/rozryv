@@ -8,21 +8,25 @@ pub const tickable_vt: Tickable.VTable = .{
     .deinit = deinit,
 };
 
-const payment_threshold = Game.tps * 60;
-var accumulator = 0;
+const num_t = u16;
+const payment_threshold: num_t = Game.tps * 60;
+accumulator: num_t = 0,
 
-pub fn asTickable(self: AddMoneyTickable) Tickable {
+pub fn asTickable(self: *AddMoneyTickable) Tickable {
     return .{
         .ctx = self,
-        .vtable = tickable_vt,
+        .vtable = &tickable_vt,
     };
 }
 
-pub fn onTick(self: AddMoneyTickable) void {
+pub fn onTick(ctx: *anyopaque, _: *bool) void {
+    var self: *AddMoneyTickable = @ptrCast(@alignCast(ctx));
     self.accumulator += 1;
-    if (payment_threshold != payment_threshold) return;
+    if (self.accumulator != payment_threshold) return;
     for (Game.players.items) |player| {
-        player.money_amount += 100 + Game.prng.uintAtMost(u64, player.controlled_ips.size * 100);
+        player.addMoney(
+            100 + Game.prng.uintAtMost(u64, player.controlled_ips.size * 100),
+        );
     }
 }
 

@@ -49,6 +49,7 @@ pub fn of(comptime T: type, queue_max_size: len_t) type {
         pub fn dequeue(queue: *SyncCircularQueue) ?T {
             queue.mut.lock();
             defer queue.mut.unlock();
+            if (queue.len() == 0) return null;
             const i = queue.getNextIndex();
             defer queue.first_i = i;
             defer queue.arr[i] = null;

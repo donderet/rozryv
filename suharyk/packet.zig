@@ -1,7 +1,7 @@
 const entities = @import("entities.zig");
 const prot = @import("protocol.zig");
 
-pub const ServerPayload = union(enum(u8)) {
+pub const ServerPayload = union(enum) {
     Error: enum {
         IllegalSuharyk,
         GameAlreadyStarted,
@@ -23,14 +23,15 @@ pub const ServerPayload = union(enum(u8)) {
         new_amount: u64,
     },
     UpdateModuleCost: struct {
-        module_cost: [entities.Virus.module_enum_size]u16,
+        module_cost: [entities.Virus.Module.count]u64,
     },
     GameOver: void,
     Victory: void,
 };
 
-pub const ClientPayload = union(enum(u8)) {
+pub const ClientPayload = union(enum) {
     Leave: void,
+    StartGame: void,
     CreateVirus: struct {
         virus: entities.Virus,
     },

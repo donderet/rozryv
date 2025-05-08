@@ -17,7 +17,7 @@ pub inline fn send(self: *Duplex, pl: ServerPayload) !void {
     self.suharyk_duplex.send(pl) catch |e| {
         // Connection is half-closed, close reading too
         if (e == error.BrokenPipe)
-            self.suharyk_duplex.br.unbuffered_reader.stream.close();
+            self.suharyk_duplex.br.unbuffered_reader.close();
         return e;
     };
 }

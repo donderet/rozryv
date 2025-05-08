@@ -51,7 +51,7 @@ pub const Duplex = struct {
     }
 
     pub fn deinit(duplex: *Duplex) void {
-        duplex.br.unbuffered_reader.stream.close();
+        duplex.br.unbuffered_reader.close();
     }
 
     /// Frees recieved packet

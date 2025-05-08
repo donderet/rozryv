@@ -29,15 +29,20 @@ detection_accumulator: u4 = 0,
 target_index: usize,
 
 heap_ptr: ?*Virus = null,
+rnd_tkbl: RandomTickable = undefined,
+rnd_tkbl_vt: RandomTickable.VTable = undefined,
 
 pub fn init(owner: *Player, suh_virus: SuharykVirus) Virus {
+    const indx = Game.ipToIndex(suh_virus.origin_ip) orelse blk: {
+        owner.kickForIllegalPacket();
+        break :blk 0;
+    };
     var v: Virus = .{
         .owner = owner,
-        .suh_virus = suh_virus,
-        .index = Game.ipToIndex(suh_virus.origin_ip),
+        .target_index = indx,
         .fast = suh_virus.fast,
         .origin_ip = suh_virus.origin_ip,
-        .detection_rate = 0,
+        .detection_chance = 0,
         .modules = .{},
     };
     for (suh_virus.modules) |mod| {
@@ -74,9 +79,11 @@ pub fn init(owner: *Player, suh_virus: SuharykVirus) Virus {
             },
         }
     }
-    if (suh_virus.modules.obfuscator) v.detection_chance /= @max(
-        3 - (owner.use_count_arr[@intFromEnum(Moudule.Obfuscator)] / 2),
-        1,
+    if (v.modules.obfuscator) v.detection_chance /= @truncate(
+        @max(
+            3 - (owner.use_count_arr[@intFromEnum(Moudule.Obfuscator)] / 2),
+            1,
+        ),
     );
     if (suh_virus.fast) {
         v.detection_chance *|= 2;
@@ -88,37 +95,45 @@ pub fn init(owner: *Player, suh_virus: SuharykVirus) Virus {
 }
 
 inline fn getRndInterval(self: Virus) u16 {
-    if (self.suh_virus.fast)
+    if (self.fast)
         return 1
     else
         return 2;
 }
 
-pub fn randomTickable(self: *Virus) RandomTickable {
-    return .{
-        .ctx = self,
-        .vtable = .{
-            .interval = self.getRndInterval(),
-            .onRandomTick = &onRandomTick,
-            .deinit = deinit,
-        },
+pub fn randomTickable(self: *Virus) *RandomTickable {
+    self.rnd_tkbl_vt = .{
+        .interval = self.getRndInterval(),
+        .onRandomTick = onRandomTick,
+        .deinit = deinit,
     };
+    self.rnd_tkbl = .{
+        .ctx = self,
+        .vtable = &self.rnd_tkbl_vt,
+    };
+    return &self.rnd_tkbl;
 }
 
-pub fn deinit(self: Virus) void {
+pub fn deinit(ctx: *anyopaque) void {
+    const self: *Virus = @ptrCast(@alignCast(ctx));
     if (self.heap_ptr) |ptr| {
         Game.allocator.destroy(ptr);
     }
 }
 
-fn onRandomTick(self: *Virus) bool {
-    if (self.detection_accumulator == 10) return true;
+fn onRandomTick(ctx: *anyopaque, dead_ptr: *bool) void {
+    var self: *Virus = @ptrCast(@alignCast(ctx));
+    if (self.detection_accumulator == 10) {
+        dead_ptr.* = true;
+        return;
+    }
     if (Game.prng.uintAtMost(u8, 100) <= self.detection_chance) {
         self.detection_accumulator += 1;
     }
-    const dev: *Device = Game.vboard.devices[self.target_index];
+    const dev: *Device = &VBoard.devices[self.target_index];
     const ip = self.getNotInfectedIp(self.target_index) catch {
-        return true;
+        dead_ptr.* = true;
+        return;
     };
     var should_update_cons = false;
     if (self.modules.rat) {
@@ -128,7 +143,7 @@ fn onRandomTick(self: *Virus) bool {
         should_update_cons = true;
     }
     if (self.modules.stealer) {
-        const rnd_ceil = switch (Game.vboard.devices[Game.ipToIndex(ip).?]) {
+        const rnd_ceil: u64 = switch (VBoard.devices[Game.ipToIndex(ip).?].suh_entity.kind) {
             .Server => 1000,
             .Player => 100,
             else => 50,
@@ -137,22 +152,34 @@ fn onRandomTick(self: *Virus) bool {
         self.owner.addMoney(addend_amount * (self.owner.upgrades[@intFromEnum(Moudule.Stealer)] + 1));
     }
     if (self.modules.worm) blk: {
-        const next_ip = self.getNotInfectedIp(self.index) catch break :blk;
+        const next_ip = self.getNotInfectedIp(self.target_index) catch break :blk;
         var copy: *Virus = Game.allocator.create(Virus) catch break :blk;
         copy.* = self.*;
         copy.heap_ptr = copy;
         copy.origin_ip = next_ip;
-        self.append(Game.allocator, copy.randomTickable().asTickable());
+        Game.on_tick.append(Game.allocator, copy.randomTickable().asTickable()) catch |e| {
+            std.log.debug("Failed to populate worm: {any}", .{e});
+        };
     }
     if (self.modules.rootkit) {
-        self.owner.controlled_ips.put(Game.allocator, ip, .PermanentControl) catch |e| {
+        self.owner.controlled_ips.put(
+            Game.allocator,
+            ip,
+            .PermanentControl,
+        ) catch |e| {
             std.log.debug("Failed to add to permanently controlled ips: {any}", .{e});
         };
         should_update_cons = true;
     }
     if (should_update_cons) {
         for (dev.connections.items) |d| {
-            self.owner.controlled_ips.put(Game.allocator, d.ip, .View);
+            self.owner.controlled_ips.put(
+                Game.allocator,
+                d.ip,
+                .View,
+            ) catch |e| {
+                std.log.debug("Failed to put to controlled_ips: {any}", .{e});
+            };
         }
         self.owner.server_req_queue.enqueueWait(.{
             .UpdateConnections = .{
@@ -161,7 +188,6 @@ fn onRandomTick(self: *Virus) bool {
             },
         });
     }
-    return false;
 }
 
 fn getNotInfectedIp(self: Virus, infected_i: usize) error{NoIpAvailable}!u32 {
@@ -171,8 +197,8 @@ fn getNotInfectedIp(self: Virus, infected_i: usize) error{NoIpAvailable}!u32 {
         4,
     );
     for (0..32) |_| {
-        const ip = Game.vboard.devices[target_i].suh_entity.ip;
-        const is_player = false;
+        const ip = VBoard.devices[target_i].suh_entity.ip;
+        var is_player = false;
         for (Game.players.items) |player| {
             if (ip == player.device.suh_entity.ip) {
                 is_player = true;
@@ -181,7 +207,7 @@ fn getNotInfectedIp(self: Virus, infected_i: usize) error{NoIpAvailable}!u32 {
         }
         if (!is_player and !self.owner.controlled_ips.contains(
             ip,
-        )) return target_i;
+        )) return ip;
         target_i = VBoard.getRndPointAround(
             target_i / VBoard.v_map_side,
             target_i % VBoard.v_map_side,

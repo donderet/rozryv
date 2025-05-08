@@ -94,5 +94,7 @@ fn connectNewClient(
     defer player.deinit();
     try Game.addPlayer(&player);
     suharyk_duplex.freePacket(join_req);
-    try player.duplexLoop();
+    const t = try std.Thread.spawn(.{}, Player.duplexRecieveLoop, .{&player});
+    t.detach();
+    try player.duplexSendLoop();
 }

@@ -28,7 +28,6 @@ pub const Virus = struct {
         Worm,
         Rootkit,
         Obfuscator,
+        pub const count = @typeInfo(Module).@"enum".fields.len;
     };
-
-    pub const module_enum_size = @typeInfo(Virus.Module).@"enum".fields.len;
 };
