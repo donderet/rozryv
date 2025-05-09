@@ -54,7 +54,7 @@ pub fn init(owner: *Player, suh_virus: SuharykVirus) Virus {
             },
             .Worm => {
                 v.modules.worm = true;
-                v.detection_chance +|= 20;
+                v.detection_chance +|= 30;
             },
             .Rat => {
                 v.modules.rat = true;
