@@ -1,22 +1,23 @@
 const std = @import("std");
 
-const allocator = @import("game.zig").allocator;
-const GameState = @import("GameState.zig");
-const window = @import("window.zig");
-const rl = window.rl;
-const string = @import("str.zig");
-const game = @import("game.zig");
 const suharyk = @import("suharyk");
 const ClientPayload = suharyk.packet.ClientPayload;
 
+const allocator = @import("game.zig").allocator;
+const game = @import("game.zig");
+const GameState = @import("GameState.zig");
+const string = @import("str.zig");
+const window = @import("window.zig");
+const rl = window.rl;
+
 const WaitGameState = @This();
 
+kill_server: bool = true,
 player_list: std.ArrayListUnmanaged([*:0]u8) = .empty,
 
 pub const state_vt: GameState.VTable = .{
     .draw = draw,
     .deinit = deinit,
-    .init = init,
 };
 
 pub fn draw(ctx: *anyopaque) void {
@@ -67,7 +68,7 @@ pub fn draw(ctx: *anyopaque) void {
     btn_rect.y += obj_rect.height;
     btn_rect.height = 100;
 
-    if (game.is_host and self.player_list.items.len >= 2) {
+    if (game.player.is_host and self.player_list.items.len >= 2) {
         if (rl.GuiButton(btn_rect, "Start game") == 1) {
             tryStart();
         }
@@ -115,7 +116,7 @@ pub fn draw(ctx: *anyopaque) void {
 
 fn onDraw(self: *WaitGameState) !void {
     _ = &self;
-    while (game.spl_queue.dequeue()) |spl| {
+    deq_loop: while (game.spl_queue.dequeue()) |spl| {
         switch (spl) {
             .BroadcastJoin => |join| {
                 const name = try allocator.dupeZ(u8, join.name);
@@ -130,13 +131,26 @@ fn onDraw(self: *WaitGameState) !void {
                     }
                 }
             },
-            .GameStarted => {
-                game.changeState(@import("HackGameState.zig").init() catch |e| {
+            .GameStarted => |gs| {
+                const HackGS = @import("HackGameState.zig");
+                const game_state = HackGS.init() catch |e| {
                     std.log.debug("Failed to change state: {any}", .{e});
                     game.changeState(@import("MenuGameState.zig").init());
                     game.disconnect();
                     return;
-                });
+                };
+                const state: *HackGS = @ptrCast(@alignCast(game_state.ctx));
+                const di = @import("Player.zig").DeviceInfo.init(.{
+                    .kind = .Player,
+                    .ip = gs.player_ip,
+                }, .Control);
+                try game.player.controlled_ips.put(game.allocator, gs.player_ip, di);
+                std.log.debug("len: {d}", .{game.player.controlled_ips.count()});
+                try state.addNewIp(gs.player_ip);
+
+                self.kill_server = false;
+                game.changeState(game_state);
+                break :deq_loop;
             },
             else => |pl| {
                 std.log.debug("Unexpected message from server: {s}", .{@tagName(pl)});
@@ -153,8 +167,9 @@ pub fn init() std.mem.Allocator.Error!GameState {
 }
 
 pub fn deinit(ctx: *anyopaque) void {
-    _ = &ctx;
-    game.stopServer();
+    const state: *WaitGameState = @ptrCast(@alignCast(ctx));
+    if (state.kill_server)
+        game.stopServer();
 }
 
 pub fn tryStart() void {

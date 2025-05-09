@@ -11,15 +11,15 @@ vtable: *const VTable,
 
 pub const VTable = struct {
     draw: *const fn (ctx: *anyopaque) void,
-    init: *const fn () std.mem.Allocator.Error!GameState,
     deinit: *const fn (ctx: *anyopaque) void,
 };
 
 pub inline fn is(self: GameState, T: type) bool {
     const second_vt: VTable = @field(T, "state_vt");
-    return self.vtable.init == second_vt.init;
+    return self.vtable.draw == second_vt.draw;
 }
 
+// Template method pattern
 pub inline fn init(T: type) std.mem.Allocator.Error!GameState {
     const ptr = try allocator.create(T);
     ptr.* = T{};

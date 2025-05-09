@@ -1,12 +1,13 @@
 const std = @import("std");
 
-const allocator = @import("game.zig").allocator;
 const suharyk = @import("suharyk");
+
+const allocator = @import("game.zig").allocator;
+const game = @import("game.zig");
 const GameState = @import("GameState.zig");
+const string = @import("str.zig");
 const window = @import("window.zig");
 const rl = window.rl;
-const string = @import("str.zig");
-const game = @import("game.zig");
 
 const JoinGameState = @This();
 
@@ -19,7 +20,6 @@ address_buf: [255:0]u8 = @splat(0),
 pub const state_vt: GameState.VTable = .{
     .draw = draw,
     .deinit = deinit,
-    .init = init,
 };
 
 pub fn draw(ctx: *anyopaque) void {
@@ -177,7 +177,7 @@ pub fn enterWaitRoom(addr: std.net.Address) !void {
     if (!server_hello.ok) return error.NotOk;
     const players: [][]u8 = server_hello.members.?;
     if (players.len == 0) {
-        game.is_host = true;
+        game.player.is_host = true;
     } else {
         std.log.debug("Players in game: {d}", .{players.len});
         for (players) |name| {

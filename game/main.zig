@@ -1,6 +1,7 @@
 const std = @import("std");
-const GameState = @import("GameState.zig");
+
 const game = @import("game.zig");
+const GameState = @import("GameState.zig");
 const window = @import("window.zig");
 const rl = window.rl;
 
@@ -14,7 +15,7 @@ pub fn main() !void {
     }
     rl.SetTraceLogLevel(rl.LOG_WARNING);
     rl.SetExitKey(0);
-    rl.InitWindow(800, 800, "C.Y.B.E.R. R.O.Z.R.Y.V.");
+    rl.InitWindow(900, 900, "C.Y.B.E.R. R.O.Z.R.Y.V.");
     defer rl.CloseWindow();
     rl.SetTargetFPS(60);
     rl.GuiLoadStyle("assets/rozryv.rgs");

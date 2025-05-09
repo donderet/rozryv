@@ -1,17 +1,16 @@
 const std = @import("std");
 
+const allocator = @import("game.zig").allocator;
+const game = @import("game.zig");
 const GameState = @import("GameState.zig");
 const window = @import("window.zig");
-const allocator = @import("game.zig").allocator;
 const rl = window.rl;
-const game = @import("game.zig");
 
 const MenuGameState = @This();
 
 pub const state_vt: GameState.VTable = .{
     .draw = draw,
     .deinit = deinit,
-    .init = vInit,
 };
 
 pub fn draw(_: *anyopaque) void {
@@ -58,10 +57,6 @@ pub fn draw(_: *anyopaque) void {
     }
 }
 
-pub fn vInit() std.mem.Allocator.Error!GameState {
-    return init();
-}
-
 pub fn init() GameState {
     return .{
         .ctx = undefined,
@@ -73,4 +68,5 @@ pub fn init() GameState {
 
 pub fn deinit(ctx: *anyopaque) void {
     _ = &ctx;
+    game.player = .{};
 }

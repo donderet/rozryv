@@ -1,11 +1,11 @@
 const std = @import("std");
 
 const allocator = @import("game.zig").allocator;
+const game = @import("game.zig");
 const GameState = @import("GameState.zig");
+const string = @import("str.zig");
 const window = @import("window.zig");
 const rl = window.rl;
-const string = @import("str.zig");
-const game = @import("game.zig");
 
 const HostGameState = @This();
 
@@ -14,7 +14,6 @@ name_buf: [15:0]u8 = @splat(0),
 pub const state_vt: GameState.VTable = .{
     .draw = draw,
     .deinit = deinit,
-    .init = init,
 };
 
 pub fn draw(ctx: *anyopaque) void {

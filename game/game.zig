@@ -1,12 +1,15 @@
 const std = @import("std");
 
-const GameState = @import("GameState.zig");
 const suharyk = @import("suharyk");
 const ServerPayload = suharyk.packet.ServerPayload;
 const ClientPayload = suharyk.packet.ClientPayload;
 const SyncCircularQueue = suharyk.SyncCircularQueue;
+
 const Duplex = @import("Duplex.zig");
+const GameState = @import("GameState.zig");
+const Player = @import("Player.zig");
 const Settings = @import("Settings.zig");
+
 var gpa: std.heap.DebugAllocator(.{}) = .init;
 pub const allocator = gpa.allocator();
 // State pattern
@@ -18,8 +21,7 @@ pub var spl_queue: SyncCircularQueue.of(ServerPayload, 64) = .{};
 pub var cpl_queue: SyncCircularQueue.of(ClientPayload, 64) = .{};
 
 pub var settings: Settings = .{};
-pub var is_host = false;
-var money_amount = 0;
+pub var player: Player = .{};
 
 pub fn getState() GameState {
     return state;
@@ -35,7 +37,7 @@ pub fn changeState(new_state: GameState) void {
 }
 
 pub fn startServer() !void {
-    is_host = true;
+    player.is_host = true;
     var sexe_buf: [256]u8 = undefined;
     const sexe = try std.fs.cwd().realpath(
         @import("server_options").exe_name,
@@ -58,7 +60,6 @@ pub fn startServer() !void {
 }
 
 pub fn stopServer() void {
-    is_host = false;
     if (serv_proc) |*proc| _ = proc.kill() catch {};
     serv_proc = null;
 }
@@ -87,12 +88,8 @@ pub fn disconnect() void {
         std.log.debug("Can't send leave packet. Server closed?", .{});
     };
     duplex.suharyk_duplex.deinit();
-    spl_queue.mut.lock();
-    spl_queue = .{};
-    spl_queue.mut.unlock();
-    cpl_queue.mut.lock();
-    cpl_queue = .{};
-    cpl_queue.mut.unlock();
+    spl_queue.clear();
+    cpl_queue.clear();
 }
 
 pub fn startDuplexLoop() !void {
@@ -165,4 +162,5 @@ pub fn duplexRecieveLoop() void {
     }
     std.log.debug("Shutting down duplex", .{});
     duplex.suharyk_duplex.deinit();
+    changeState(@import("MenuGameState.zig").init());
 }
