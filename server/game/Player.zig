@@ -3,22 +3,22 @@ const std = @import("std");
 const suharyk = @import("suharyk");
 const ServerPayload = suharyk.packet.ServerPayload;
 const ClientPayload = suharyk.packet.ClientPayload;
-const Virus = @import("Virus.zig");
 const Module = suharyk.entities.Virus.Module;
+const SyncCircularQueue = suharyk.SyncCircularQueue;
 
 const Duplex = @import("../Duplex.zig");
 const Game = @import("../Game.zig");
-const SyncCircularQueue = suharyk.SyncCircularQueue;
 const Device = @import("Device.zig");
 const VBoard = @import("VBoard.zig");
+const Virus = @import("Virus.zig");
 
-const Player = @This();
-
-pub const DevicePermission = enum {
+const DevicePermission = enum {
     View,
     Control,
     PermanentControl,
 };
+
+const Player = @This();
 
 allocator: std.mem.Allocator,
 duplex: *Duplex,
@@ -199,13 +199,23 @@ fn updateClientMoney(self: *Player) void {
 }
 
 pub fn kickForIllegalPacket(player: *Player) void {
+    defer player.server_req_queue.enqueueWait(.{
+        .Error = .IllegalSuharyk,
+    });
     std.log.info(
         "Kicked player {s} for an illegal packet",
         .{player.name},
     );
-    player.server_req_queue.enqueueWait(.{
-        .Error = .IllegalSuharyk,
-    });
+    if (@import("builtin").mode != .Debug) return;
+    const di = std.debug.getSelfDebugInfo() catch return;
+    std.debug.printSourceAtAddress(
+        di,
+        std.io.getStdOut().writer(),
+        @returnAddress(),
+        .escape_codes,
+    ) catch |e| {
+        std.log.debug("Failed to printSourceAtAddress: {any}", .{e});
+    };
 }
 
 pub fn createVirus(player: *Player, v: suharyk.entities.Virus) !void {
@@ -241,7 +251,7 @@ pub fn upgradeModule(player: *Player, module: Module) void {
         player.kickForIllegalPacket();
         return;
     }
-    player.money_amount -= player.upgrade_cost[i];
+    player.removeMoney(player.upgrade_cost[i]);
     player.upgrade_cost[i] = player.calcModuleUpgradeCost(module);
     player.server_req_queue.enqueueWait(.{
         .UpdateModuleCost = .{

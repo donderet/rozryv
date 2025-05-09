@@ -2,9 +2,9 @@ const std = @import("std");
 
 const suharyk = @import("suharyk");
 
+const Player = @import("./game/Player.zig");
 const Duplex = @import("Duplex.zig");
 const Game = @import("Game.zig");
-const Player = @import("./game/Player.zig");
 
 var wgroup: std.Thread.WaitGroup = .{};
 var pool: std.Thread.Pool = undefined;

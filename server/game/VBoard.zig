@@ -63,35 +63,7 @@ pub fn generate() !void {
         );
     }
     for (0..devices.len) |i| generateConnections(i);
-    // const rt: RandomTickable = .{ .ctx = undefined, .vtable = .{
-    //     .{
-    //         .interval = 2,
-    //         .onRandomTick = &randomizeConnection,
-    //     },
-    // } };
-    // Game.on_tick.append(Game.allocator, rt.asTickable());
 }
-
-// fn randomizeConnection(_: *anyopaque) void {
-//     while (true) {
-//         const rnd_i = Game.prng.uintLessThan(usize, devices);
-//         if (devices[rnd_i].suh_entity.kind == .Player)
-//             continue;
-//         const rnd_dev = devices[rnd_i];
-//         const disconnect = Game.prng.boolean();
-//         if (disconnect) {
-//             const con_i = Game.prng.uintLessThan(usize, rnd_dev.connections.items.len);
-//             rnd_dev.connections.swapRemove(con_i);
-//             Game.cmd_queue.enqueueWait(.{
-//                 .UpdateConnections = .{
-//                     .device = rnd_dev,
-//                 },
-//             });
-//             return;
-//         }
-//         generateConnection(rnd_dev, rnd_i);
-//     }
-// }
 
 fn getRndIp() u32 {
     // Class-A IP-address (1.0.0.0–126.255.255.255, excluding 10.x.x.x)
@@ -148,7 +120,9 @@ fn isValidConnection(requester: SuhDevice, recipient: SuhDevice) bool {
         .Player => unreachable,
         .Server => true,
         .PersonalComputer => recipient.kind != .PersonalComputer,
-        .IoTBulBul, .IoTCamera, .IoTBoiler, .IoTAirConditioner => recipient.kind == .Server,
+        .IoTBulBul,
+        .IoTCamera,
+        => recipient.kind == .Server,
     };
 }
 
@@ -174,6 +148,8 @@ fn getMaxConnections(kind: SuhDevice.Kind) u8 {
         .Player => unreachable,
         .Server => 8,
         .PersonalComputer => 2,
-        .IoTBulBul, .IoTCamera, .IoTBoiler, .IoTAirConditioner => 2,
+        .IoTBulBul,
+        .IoTCamera,
+        => 2,
     };
 }

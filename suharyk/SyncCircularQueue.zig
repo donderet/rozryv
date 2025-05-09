@@ -7,31 +7,37 @@ pub fn of(comptime T: type, queue_max_size: len_t) type {
         const SyncCircularQueue = @This();
 
         mut: std.Thread.Mutex = .{},
-        arr: [queue_max_size]?T = .{null} ** queue_max_size,
+        arr: [queue_max_size]T = undefined,
         first_i: len_t = 0,
         last_i: len_t = 0,
 
         pub fn enqueueWait(queue: *SyncCircularQueue, pl: T) void {
-            queue.mut.lock();
             defer queue.mut.unlock();
-            var i = queue.getNextLastIndex();
-            const wait = queue.arr[i] != null;
-            if (wait) {
-                queue.mut.unlock();
-                std.log.warn("queue: Waiting for free space...", .{});
-            }
-            while (queue.arr[i] != null) {}
-            if (wait) {
+            while (true) {
+                if (queue.isFull()) {
+                    queue.mut.unlock();
+                    std.log.warn("queue: Waiting for free space...", .{});
+                }
+                while (queue.isFull()) {}
                 queue.mut.lock();
-                std.log.warn("queue: Done waiting!", .{});
-                i = queue.getNextLastIndex();
+                // Check once more while mutex is locked
+                if (queue.isFull()) {
+                    queue.mut.unlock();
+                    continue;
+                }
+                const i = queue.getNextLastIndex();
+                queue.arr[i] = pl;
+                queue.last_i = i;
+                break;
             }
-            queue.arr[i] = pl;
-            queue.last_i = i;
         }
 
-        pub inline fn hasMore(queue: SyncCircularQueue) bool {
-            return queue.last_i != queue.first_i and queue.arr[queue.first_i] == null;
+        pub inline fn isFull(queue: SyncCircularQueue) bool {
+            return queue.len() == queue_max_size;
+        }
+
+        pub inline fn clear(queue: *SyncCircularQueue) void {
+            queue.first_i = queue.last_i;
         }
 
         pub inline fn len(queue: SyncCircularQueue) len_t {
@@ -47,12 +53,11 @@ pub fn of(comptime T: type, queue_max_size: len_t) type {
         }
 
         pub fn dequeue(queue: *SyncCircularQueue) ?T {
+            if (queue.len() == 0) return null;
             queue.mut.lock();
             defer queue.mut.unlock();
-            if (queue.len() == 0) return null;
             const i = queue.getNextIndex();
             defer queue.first_i = i;
-            defer queue.arr[i] = null;
             return queue.arr[i];
         }
     };
@@ -61,7 +66,8 @@ pub fn of(comptime T: type, queue_max_size: len_t) type {
 test "endequeue" {
     std.testing.log_level = .debug;
     var queue: of(u16, 4) = .{};
-    try std.testing.expect(queue.hasMore() == false);
+    try std.testing.expect(queue.len() == 0);
+    try std.testing.expect(queue.isFull() == false);
     queue.enqueueWait(32);
     queue.enqueueWait(1337);
     queue.enqueueWait(104);
@@ -84,7 +90,7 @@ test "sync endequeue" {
                 var el_left: u16 = threads_n;
                 var sum: u16 = 0;
                 while (el_left != 0) {
-                    if (q.hasMore()) {
+                    if (q.len() != 0) {
                         defer el_left -= 1;
                         const maybe_el = q.dequeue();
                         if (maybe_el) |el| {

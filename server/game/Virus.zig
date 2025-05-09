@@ -13,7 +13,6 @@ const VBoard = @import("VBoard.zig");
 const Virus = @This();
 
 owner: *Player,
-fast: bool,
 origin_ip: u32,
 modules: struct {
     zero_day: bool = false,
@@ -40,7 +39,6 @@ pub fn init(owner: *Player, suh_virus: SuharykVirus) Virus {
     var v: Virus = .{
         .owner = owner,
         .target_index = indx,
-        .fast = suh_virus.fast,
         .origin_ip = suh_virus.origin_ip,
         .detection_chance = 0,
         .modules = .{},
@@ -85,25 +83,14 @@ pub fn init(owner: *Player, suh_virus: SuharykVirus) Virus {
             1,
         ),
     );
-    if (suh_virus.fast) {
-        v.detection_chance *|= 2;
-        v.detection_chance +|= 10;
-    }
     if (v.detection_chance > 90) v.detection_chance = 90;
     if (v.detection_chance < 5) v.detection_chance = 5;
     return v;
 }
 
-inline fn getRndInterval(self: Virus) u16 {
-    if (self.fast)
-        return 1
-    else
-        return 2;
-}
-
 pub fn randomTickable(self: *Virus) *RandomTickable {
     self.rnd_tkbl_vt = .{
-        .interval = self.getRndInterval(),
+        .interval = 2,
         .onRandomTick = onRandomTick,
         .deinit = deinit,
     };
@@ -183,7 +170,7 @@ fn onRandomTick(ctx: *anyopaque, dead_ptr: *bool) void {
         }
         self.owner.server_req_queue.enqueueWait(.{
             .UpdateConnections = .{
-                .ip = self.origin_ip,
+                .dev = dev.suh_entity,
                 .connections = dev.connections.items,
             },
         });

@@ -1,7 +1,9 @@
 const std = @import("std");
+
 const Game = @import("../Game.zig");
-const AddMoneyTickable = @This();
 const Tickable = @import("Tickable.zig");
+
+const AddMoneyTickable = @This();
 
 pub const tickable_vt: Tickable.VTable = .{
     .onTick = onTick,
@@ -10,6 +12,7 @@ pub const tickable_vt: Tickable.VTable = .{
 
 const num_t = u16;
 const payment_threshold: num_t = Game.tps * 60;
+
 accumulator: num_t = 0,
 
 pub fn asTickable(self: *AddMoneyTickable) Tickable {

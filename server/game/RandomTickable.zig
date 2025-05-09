@@ -1,11 +1,9 @@
 const std = @import("std");
-const Tickable = @import("Tickable.zig");
-const Game = @import("../Game.zig");
-const RandomTickable = @This();
 
-ctx: *anyopaque,
-vtable: *const VTable,
-accumulated_ticks: u8 = 0,
+const Game = @import("../Game.zig");
+const Tickable = @import("Tickable.zig");
+
+const RandomTickable = @This();
 
 pub const tickable_vt: Tickable.VTable = .{
     .onTick = onTick,
@@ -19,6 +17,10 @@ pub const VTable = struct {
     onRandomTick: *const fn (ctx: *anyopaque, dead_ptr: *bool) void,
     deinit: *const fn (ctx: *anyopaque) void,
 };
+
+ctx: *anyopaque,
+vtable: *const VTable,
+accumulated_ticks: u8 = 0,
 
 pub inline fn onRandomTick(ctx: *anyopaque, dead_ptr: *bool) void {
     var self: *RandomTickable = @ptrCast(@alignCast(ctx));
@@ -51,5 +53,5 @@ pub inline fn asTickable(self: *RandomTickable) Tickable {
 
 pub fn deinit(ctx: *anyopaque) void {
     const self: *RandomTickable = @ptrCast(@alignCast(ctx));
-    self.vtable.deinit(self);
+    self.vtable.deinit(self.ctx);
 }

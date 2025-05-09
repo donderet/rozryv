@@ -14,7 +14,6 @@ pub const Device = struct {
 };
 
 pub const Virus = struct {
-    fast: bool,
     origin_ip: u32,
     modules: []Module,
 
@@ -26,6 +25,7 @@ pub const Virus = struct {
         Worm,
         Rootkit,
         Obfuscator,
+
         pub const count = @typeInfo(Module).@"enum".fields.len;
     };
 };

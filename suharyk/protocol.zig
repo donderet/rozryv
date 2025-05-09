@@ -1,7 +1,8 @@
 const std = @import("std");
 
-pub const packet = @import("packet.zig");
+pub const entities = @import("entities.zig");
 pub const net = @import("net.zig");
+pub const packet = @import("packet.zig");
 pub const SyncCircularQueue = @import("SyncCircularQueue.zig");
 
 pub const version: u8 = 0;
@@ -15,8 +16,6 @@ pub const server_hello = struct {
     ok: bool,
     members: ?[][]u8,
 };
-
-pub const entities = @import("entities.zig");
 
 comptime {
     // Only 64-bit LE architectures are supported

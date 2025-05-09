@@ -5,16 +5,16 @@ const entities = suharyk.entities;
 const Device = entities.Device;
 const ServerPayload = suharyk.packet.ServerPayload;
 const ClientPayload = suharyk.packet.ClientPayload;
+const SyncCircularQueue = suharyk.SyncCircularQueue;
 
 const AddMoneyTickable = @import("./game/AddMoneyTickable.zig");
 const Player = @import("./game/Player.zig");
 const Tickable = @import("./game/Tickable.zig");
 const VBoard = @import("./game/VBoard.zig");
-const SyncCircularQueue = suharyk.SyncCircularQueue;
 const Duplex = @import("Duplex.zig");
 
 const Game = @This();
-// Command pattern
+
 pub const ClientRequest = struct {
     player: *Player,
     pl: ClientPayload,
@@ -102,6 +102,25 @@ pub fn start() void {
                 .player_ip = player.device.suh_entity.ip,
             },
         });
+        player.server_req_queue.enqueueWait(.{
+            .UpdateModuleCost = .{
+                .module_cost = player.upgrade_cost,
+            },
+        });
+        player.server_req_queue.enqueueWait(.{
+            .UpdateMoney = .{
+                .new_amount = player.money_amount,
+            },
+        });
+        player.controlled_ips.put(
+            allocator,
+            player.device.suh_entity.ip,
+            .PermanentControl,
+        ) catch |e| {
+            std.log.debug("Can't add player to its own cotnrolled ips: {any}", .{e});
+            disconnectEveryone();
+            return;
+        };
     }
     var timer = std.time.Timer.start() catch {
         @panic("Timer is not supported");
@@ -117,13 +136,16 @@ pub fn start() void {
             };
         }
 
-        for (on_tick.items, 0..) |*handler, i| {
+        var i: usize = 0;
+        while (i != on_tick.items.len) {
+            const handler: *Tickable = &on_tick.items[i];
             if (handler.dead) {
                 handler.deinit();
                 _ = on_tick.swapRemove(i);
                 continue;
             }
             handler.onTick();
+            i += 1;
         }
 
         if (Game.playerCount() == 1) {
@@ -132,7 +154,7 @@ pub fn start() void {
             });
         }
 
-        const eepy_time = tick_time - timer.read();
+        const eepy_time = tick_time -| timer.read();
         if (eepy_time <= 0) {
             std.log.info(
                 "Server is overloaded and running {d} ms behind ",
@@ -154,7 +176,7 @@ fn handleRequest(pl: ClientPayload, player: *Player) !void {
         .CreateVirus => |cv| {
             try player.createVirus(cv.virus);
         },
-        .UpdgradeModule => |um| {
+        .UpgradeModule => |um| {
             player.upgradeModule(um.mod);
         },
         .Rozryv => |rozryv| {

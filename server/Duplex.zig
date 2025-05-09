@@ -1,10 +1,11 @@
 const std = @import("std");
-pub const Duplex = @This();
+
 const suharyk = @import("suharyk");
 const ServerPayload = suharyk.packet.ServerPayload;
 const ClientPayload = suharyk.packet.ClientPayload;
 
-// Decorator pattern
+const Duplex = @This();
+
 suharyk_duplex: suharyk.Duplex,
 
 pub fn init(server_duplex: suharyk.Duplex) Duplex {
