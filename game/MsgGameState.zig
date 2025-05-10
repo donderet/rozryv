@@ -1,10 +1,10 @@
 const std = @import("std");
 
-const allocator = @import("game.zig").allocator;
-const game = @import("game.zig");
 const GameState = @import("GameState.zig");
 const window = @import("window.zig");
+const allocator = @import("game.zig").allocator;
 const rl = window.rl;
+const game = @import("game.zig");
 
 const MsgGameState = @This();
 
@@ -18,7 +18,7 @@ pub const state_vt: GameState.VTable = .{
 pub fn draw(ctx: *anyopaque) void {
     const self: *MsgGameState = @ptrCast(@alignCast(ctx));
     const margin = 15;
-    _ = rl.GuiPanel(
+    if (rl.GuiPanel(
         .{
             .x = margin,
             .y = margin,
@@ -26,7 +26,9 @@ pub fn draw(ctx: *anyopaque) void {
             .height = window.height - (2 * margin),
         },
         self.msg,
-    );
+    ) == 1) {
+        game.changeState(@import("MenuGameState.zig").init());
+    }
 }
 
 pub fn init(msg: [:0]const u8) std.mem.Allocator.Error!GameState {

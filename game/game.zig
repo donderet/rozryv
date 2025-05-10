@@ -20,15 +20,12 @@ pub var duplex: Duplex = undefined;
 pub var spl_queue: SyncCircularQueue.of(ServerPayload, 64) = .{};
 pub var cpl_queue: SyncCircularQueue.of(ClientPayload, 64) = .{};
 
+// Memento pattern
 pub var settings: Settings = .{};
 pub var player: Player = .{};
 
 pub fn getState() GameState {
     return state;
-}
-
-pub fn init() !void {
-    // TODO: load settings
 }
 
 pub fn changeState(new_state: GameState) void {

@@ -36,7 +36,6 @@ var game_started = false;
 pub var name_list: std.ArrayListUnmanaged([]u8) = .empty;
 pub var cmd_queue: SyncCircularQueue.of(ClientRequest, 512) = .{};
 // Observer pattern
-// Command pattern
 pub var on_tick: std.ArrayListUnmanaged(Tickable) = .empty;
 
 pub fn addPlayer(player: *Player) !void {

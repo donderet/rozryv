@@ -233,7 +233,7 @@ fn onDraw(self: *HackGameState) !void {
             },
             .UpdateMoney => |update| {
                 game.player.money_amount = update.new_amount;
-                self.upadteMoneyText();
+                self.updateMoneyText();
             },
             .GameStarted,
             .BroadcastJoin,
@@ -297,7 +297,7 @@ pub fn addNewIp(self: *HackGameState, ip: u32) !void {
     try self.ip_list.append(game.allocator, str.ptr);
 }
 
-fn upadteMoneyText(self: *HackGameState) void {
+fn updateMoneyText(self: *HackGameState) void {
     _ = std.fmt.bufPrintZ(
         &self.money_text,
         "{d} $",
@@ -310,7 +310,7 @@ fn upadteMoneyText(self: *HackGameState) void {
 pub fn init() std.mem.Allocator.Error!GameState {
     const gs = try GameState.init(HackGameState);
     var state: *HackGameState = @ptrCast(@alignCast(gs.ctx));
-    state.upadteMoneyText();
+    state.updateMoneyText();
     return gs;
 }
 

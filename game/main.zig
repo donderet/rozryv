@@ -6,7 +6,6 @@ const window = @import("window.zig");
 const rl = window.rl;
 
 pub fn main() !void {
-    try game.init();
     game.settings.restore() catch |e| {
         std.log.debug("Cannot restore settings: {any}", .{e});
     };
